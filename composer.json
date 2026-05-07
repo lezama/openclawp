@@ -1,0 +1,21 @@
+{
+  "name": "automattic/openclawp",
+  "description": "Generic chat-with-an-agent WordPress plugin built on Automattic/agents-api.",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "php": ">=8.1",
+    "automattic/agents-api": "dev-main"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.6"
+  },
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/Automattic/agents-api"
+    }
+  ],
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}
