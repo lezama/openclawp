@@ -33,15 +33,30 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 	private const META_TOKEN_ID             = '_openclawp_token_id';
 
 	public static function register_post_type(): void {
+		// Sessions are first-class WordPress entities: queryable via WP_Query and
+		// the standard REST API, themeable, exportable, and ownable by the user
+		// who created them. They are not surfaced in wp-admin lists by default
+		// (show_ui = false) — openclaWP renders its own session views — and they
+		// have no front-end permalinks (public = false) because they are
+		// per-user data, not site content. The intent matches how `wp_block`
+		// (reusable blocks) is registered: useful as a real CPT, invisible in
+		// the global menu, fully exposed to programmatic queries.
 		register_post_type(
 			self::POST_TYPE,
 			array(
+				'labels'              => array(
+					'name'          => __( 'openclaWP Sessions', 'openclawp' ),
+					'singular_name' => __( 'openclaWP Session', 'openclawp' ),
+				),
 				'public'              => false,
 				'show_ui'             => false,
-				'show_in_rest'        => false,
+				'show_in_rest'        => true,
+				'rest_base'           => 'openclawp-sessions',
+				'rest_namespace'      => 'wp/v2',
 				'exclude_from_search' => true,
 				'rewrite'             => false,
-				'supports'            => array( 'title', 'editor', 'author' ),
+				'has_archive'         => false,
+				'supports'            => array( 'title', 'editor', 'author', 'custom-fields' ),
 				'capability_type'     => 'post',
 				'map_meta_cap'        => true,
 			)

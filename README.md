@@ -171,7 +171,9 @@ For listing or deleting sessions, query the `openclawp_session` post type via th
 
 ## Storage shape
 
-Each conversation is one `openclawp_session` post. `post_content` holds the messages array as JSON (per `WP_Agent_Conversation_Store::update_session()` which receives the complete transcript on each turn). Auxiliary fields (`workspace_type`, `workspace_id`, `agent_id`, `metadata`, `provider`, `model`, `provider_response_id`, `context`, `last_read_at`, `expires_at`) live in post_meta. The lock primitive uses an atomic `add_post_meta(..., $unique=true)` test-and-set on `_openclawp_lock`.
+Each conversation is one `openclawp_session` post. `post_content` holds the messages array as JSON (per `WP_Agent_Conversation_Store::update_session()` which receives the complete transcript on each turn). Auxiliary fields (`workspace_type`, `workspace_id`, `agent_id`, `metadata`, `provider`, `model`, `provider_response_id`, `context`, `last_read_at`, `expires_at`) live in post_meta. The lock primitive uses `add_post_meta(..., $unique=true)` for the fresh-acquire path and an atomic `$wpdb->update()` compare-and-swap for the expired-lock-reclaim path.
+
+The CPT is registered with `show_in_rest => true` and a `rest_base` of `openclawp-sessions`, so sessions are queryable via the standard WP REST API at `/wp/v2/openclawp-sessions`. They're invisible in the global wp-admin menu (`show_ui => false`) because openclaWP renders its own session views; they have no front-end permalinks (`public => false`) because transcripts are per-user data, not site content. The same shape `wp_block` (reusable blocks) ships with.
 
 This is deliberate: no new tables, fully WordPress-canonical, and trivially swappable behind the `openclawp_conversation_store` filter when you outgrow it.
 
