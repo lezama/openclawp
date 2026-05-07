@@ -46,6 +46,56 @@ final class OpenclaWP_Abilities {
 
 		self::register_echo_ability();
 		self::register_chat_ability();
+
+		/**
+		 * Whether to register the bundled loop-demo fixtures
+		 * (`openclawp/get-time` ability + `openclawp-loop-demo` agent).
+		 *
+		 * Off by default. Used by smoke tests and the local Studio site to
+		 * exercise the multi-turn loop with a real tool. Production installs
+		 * should leave this off.
+		 *
+		 * @param bool $enabled Default false.
+		 */
+		if ( apply_filters( 'openclawp_register_loop_demo', false ) ) {
+			self::register_get_time_ability();
+		}
+	}
+
+	private static function register_get_time_ability(): void {
+		wp_register_ability(
+			'openclawp/get-time',
+			array(
+				'label'               => __( 'Get current time', 'openclawp' ),
+				'description'         => __( 'Returns the current server time in ISO 8601 (UTC). Call this whenever the user asks for the time, the current date, or how long ago something happened.', 'openclawp' ),
+				'category'            => 'openclawp',
+				'input_schema'        => array(
+					'type' => 'object',
+				),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'properties' => array(
+						'iso8601' => array(
+							'type'        => 'string',
+							'description' => 'Current time as an ISO 8601 UTC string.',
+						),
+						'unix'    => array(
+							'type'        => 'integer',
+							'description' => 'Current Unix timestamp.',
+						),
+					),
+					'required'   => array( 'iso8601', 'unix' ),
+				),
+				'execute_callback'    => static function (): array {
+					$now = time();
+					return array(
+						'iso8601' => gmdate( 'c', $now ),
+						'unix'    => $now,
+					);
+				},
+				'permission_callback' => '__return_true',
+			)
+		);
 	}
 
 	private static function register_echo_ability(): void {

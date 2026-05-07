@@ -72,16 +72,33 @@ final class OpenclaWP_Runner {
 			'content' => $message,
 		);
 
-		$turn_runner = self::build_turn_runner( $agent, $session, $session_id );
+		$tools         = OpenclaWP_Tools_Resolver::for_agent( $agent );
+		$tool_executor = empty( $tools['name_to_ability'] ) ? null : new OpenclaWP_Tool_Executor( $tools['name_to_ability'] );
+		$max_turns     = (int) ( ( $agent->get_default_config()['max_turns'] ?? 5 ) );
+
+		$turn_runner = self::build_turn_runner(
+			$agent,
+			$session,
+			$session_id,
+			$tools['declarations_for_provider']
+		);
 
 		// Don't pass on_event — OpenclaWP_Event_Sink already subscribes to the canonical
 		// `agents_api_loop_event` action. Doubling up would log every event twice.
 		$loop_options = array(
-			'max_turns'             => 1,
+			'max_turns'             => max( 1, $max_turns ),
 			'transcript_lock'       => $store,
 			'transcript_session_id' => $session_id,
-			'transcript_lock_ttl'   => 120,
+			'transcript_lock_ttl'   => 300,
+			// The loop breaks after every turn unless should_continue returns
+			// true. We rely on max_turns + completion_policy (when set) to
+			// stop, so always allow continuation here.
+			'should_continue'       => '__return_true',
 		);
+		if ( null !== $tool_executor ) {
+			$loop_options['tool_executor']     = $tool_executor;
+			$loop_options['tool_declarations'] = $tools['declarations'];
+		}
 
 		$result = WP_Agent_Conversation_Loop::run( $messages, $turn_runner, $loop_options );
 
@@ -107,9 +124,9 @@ final class OpenclaWP_Runner {
 	 *
 	 * @return callable
 	 */
-	private static function build_turn_runner( WP_Agent $agent, array $session, string $session_id ): callable {
-		$default_factory = static function ( WP_Agent $agent_obj ) use ( $session_id ): callable {
-			return static function ( array $messages, array $context ) use ( $agent_obj, $session_id ): array {
+	private static function build_turn_runner( WP_Agent $agent, array $session, string $session_id, array $function_declarations ): callable {
+		$default_factory = static function ( WP_Agent $agent_obj ) use ( $session_id, $function_declarations ): callable {
+			return static function ( array $messages, array $context ) use ( $agent_obj, $session_id, $function_declarations ): array {
 				$telemetry = array(
 					'agent_slug'  => $agent_obj->get_slug(),
 					'session_id'  => $session_id,
@@ -142,37 +159,72 @@ final class OpenclaWP_Runner {
 
 				$ai_messages = OpenclaWP_Message_Adapter::to_ai_client_messages( $messages );
 
+				$builder = wp_ai_client_prompt( $ai_messages );
+				if ( ! empty( $function_declarations ) ) {
+					$builder = $builder->using_function_declarations( ...$function_declarations );
+				}
+
+				$description = $agent_obj->get_description();
+				if ( '' !== $description && method_exists( $builder, 'using_system_instruction' ) ) {
+					$builder = $builder->using_system_instruction( $description );
+				}
+
 				$start_us  = microtime( true );
-				$generated = wp_ai_client_prompt( $ai_messages )->generate_text_result();
+				$generated = $builder->generate_text_result();
 				$telemetry['duration_ms'] = (int) round( ( microtime( true ) - $start_us ) * 1000 );
 
-				$reply = '';
 				if ( is_wp_error( $generated ) ) {
-					$reply              = '[provider error: ' . $generated->get_error_message() . ']';
 					$telemetry['error'] = (string) $generated->get_error_code();
-				} elseif ( is_object( $generated ) ) {
-					$telemetry['success']     = true;
-					$telemetry['provider']    = self::extract_provider_id( $generated );
-					$telemetry['model']       = self::extract_model_id( $generated );
-					$telemetry['token_usage'] = self::extract_token_usage( $generated );
+					self::emit_chat_telemetry( $telemetry );
 
-					if ( method_exists( $generated, 'toText' ) ) {
-						$reply = (string) $generated->toText();
-					}
-				} elseif ( is_string( $generated ) ) {
-					$reply               = $generated;
-					$telemetry['success'] = true;
+					return array(
+						'messages' => array_merge(
+							$messages,
+							array(
+								array(
+									'role'    => 'assistant',
+									'content' => '[provider error: ' . $generated->get_error_message() . ']',
+								),
+							)
+						),
+						'tool_execution_results' => array(),
+						'conversation_complete'  => true,
+					);
 				}
+
+				$telemetry['success']     = true;
+				$telemetry['provider']    = self::extract_provider_id( $generated );
+				$telemetry['model']       = self::extract_model_id( $generated );
+				$telemetry['token_usage'] = self::extract_token_usage( $generated );
+
+				$tool_calls    = self::extract_tool_calls( $generated );
+				$assistant_txt = method_exists( $generated, 'toText' ) ? (string) $generated->toText() : '';
 
 				self::emit_chat_telemetry( $telemetry );
 
+				// When mediation is enabled (i.e. tools are declared), always return
+				// the mediation shape — even with an empty tool_calls array, which
+				// the loop reads as "natural completion" and stops. This unifies the
+				// turn-1 (tool call) and turn-N (final text) returns.
+				if ( ! empty( $function_declarations ) ) {
+					$out = array(
+						'messages'   => $messages,
+						'tool_calls' => $tool_calls,
+					);
+					if ( '' !== $assistant_txt ) {
+						$out['content'] = $assistant_txt;
+					}
+					return $out;
+				}
+
+				// No tool declarations → legacy path: append the assistant message ourselves.
 				return array(
 					'messages' => array_merge(
 						$messages,
 						array(
 							array(
 								'role'    => 'assistant',
-								'content' => $reply,
+								'content' => $assistant_txt,
 							),
 						)
 					),
@@ -226,6 +278,65 @@ final class OpenclaWP_Runner {
 		 * @param array $telemetry Read-only snapshot.
 		 */
 		do_action( 'openclawp_chat_turn_completed', $telemetry );
+	}
+
+	/**
+	 * Extract tool calls from a GenerativeAiResult, in the shape
+	 * `[ ['name' => '…', 'parameters' => […]], … ]` that
+	 * `WP_Agent_Conversation_Loop::mediate_tool_calls()` consumes.
+	 *
+	 * @param mixed $result
+	 * @return array<int, array{name:string, parameters:array}>
+	 */
+	private static function extract_tool_calls( $result ): array {
+		if ( ! is_object( $result ) || ! method_exists( $result, 'toMessage' ) ) {
+			return array();
+		}
+
+		try {
+			$message = $result->toMessage();
+		} catch ( \Throwable $e ) {
+			return array();
+		}
+
+		if ( ! is_object( $message ) || ! method_exists( $message, 'getParts' ) ) {
+			return array();
+		}
+
+		$out = array();
+		foreach ( $message->getParts() as $part ) {
+			if ( ! is_object( $part ) || ! method_exists( $part, 'getType' ) ) {
+				continue;
+			}
+			$type = $part->getType();
+			$type_value = is_object( $type ) && method_exists( $type, 'value' ) ? $type->value() : (string) $type;
+			if ( 'function_call' !== $type_value && 'functionCall' !== $type_value ) {
+				continue;
+			}
+
+			if ( ! method_exists( $part, 'getFunctionCall' ) ) {
+				continue;
+			}
+
+			$fc = $part->getFunctionCall();
+			if ( ! is_object( $fc ) ) {
+				continue;
+			}
+
+			$name = method_exists( $fc, 'getName' ) ? (string) $fc->getName() : '';
+			$args = method_exists( $fc, 'getArgs' ) ? $fc->getArgs() : array();
+
+			if ( '' === $name ) {
+				continue;
+			}
+
+			$out[] = array(
+				'name'       => $name,
+				'parameters' => is_array( $args ) ? $args : array(),
+			);
+		}
+
+		return $out;
 	}
 
 	private static function extract_provider_id( $result ): string {
