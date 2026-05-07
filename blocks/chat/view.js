@@ -172,6 +172,26 @@ function openclaWPInitChat() {
 		els.input.focus();
 	} );
 
+	// Enter sends; Shift+Enter inserts a newline. Composing-state (IME / accent
+	// picker) is excluded so dictation users don't accidentally submit.
+	els.input.addEventListener( 'keydown', ( ev ) => {
+		if (
+			ev.key === 'Enter' &&
+			! ev.shiftKey &&
+			! ev.ctrlKey &&
+			! ev.metaKey &&
+			! ev.altKey &&
+			! ev.isComposing
+		) {
+			ev.preventDefault();
+			if ( typeof els.form.requestSubmit === 'function' ) {
+				els.form.requestSubmit();
+			} else {
+				els.form.dispatchEvent( new Event( 'submit', { cancelable: true } ) );
+			}
+		}
+	} );
+
 	els.form.addEventListener( 'submit', async ( ev ) => {
 		ev.preventDefault();
 		const message = els.input.value.trim();
