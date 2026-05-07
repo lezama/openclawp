@@ -25,6 +25,7 @@ final class OpenclaWP_Bootstrap {
 		// Register hooks. Class files load lazily through includes/autoload.php
 		// the first time PHP needs to construct or call into a class.
 		add_action( 'init', array( 'OpenclaWP_Conversation_Store', 'register_post_type' ), 5 );
+		add_action( 'init', array( __CLASS__, 'register_blocks' ), 10 );
 		OpenclaWP_Agent_Registrar::register();
 		OpenclaWP_Abilities::register();
 		OpenclaWP_Event_Sink::register();
@@ -32,6 +33,39 @@ final class OpenclaWP_Bootstrap {
 		if ( is_admin() ) {
 			OpenclaWP_Admin::register();
 		}
+	}
+
+	public static function register_blocks(): void {
+		register_block_type( OPENCLAWP_PATH . 'blocks/chat' );
+
+		// The block's view.js depends on wp.apiFetch; declare that and inject
+		// the nonce + REST namespace via wp_localize_script when the script is
+		// enqueued (block.json's viewScript registers as `openclawp-chat-view-script`).
+		add_action(
+			'wp_enqueue_scripts',
+			array( __CLASS__, 'localize_chat_block_view_script' ),
+			15
+		);
+		add_action(
+			'admin_enqueue_scripts',
+			array( __CLASS__, 'localize_chat_block_view_script' ),
+			15
+		);
+	}
+
+	public static function localize_chat_block_view_script(): void {
+		$handle = 'openclawp-chat-view-script';
+		if ( ! wp_script_is( $handle, 'registered' ) ) {
+			return;
+		}
+		wp_localize_script(
+			$handle,
+			'openclaWPConfig',
+			array(
+				'restNamespace' => 'openclawp/v1',
+				'nonce'         => wp_create_nonce( 'wp_rest' ),
+			)
+		);
 	}
 
 	private static function has_required_dependencies(): bool {

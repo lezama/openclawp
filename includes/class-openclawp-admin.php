@@ -1,6 +1,11 @@
 <?php
 /**
- * Admin menu + chat page.
+ * Admin menu — renders the openclawp/chat block.
+ *
+ * The chat UI itself lives in the block at blocks/chat/. The admin page is
+ * just a thin wrapper that renders that block, so the same surface works
+ * embedded in any post or front-end template via shortcode/programmatic
+ * insertion.
  *
  * @package OpenclaWP
  */
@@ -9,12 +14,10 @@ defined( 'ABSPATH' ) || exit;
 
 final class OpenclaWP_Admin {
 
-	private const PAGE_SLUG    = 'openclawp';
-	private const SCRIPT_HANDLE = 'openclawp-admin-chat';
+	private const PAGE_SLUG = 'openclawp';
 
 	public static function register(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
-		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
 	}
 
 	public static function register_menu(): void {
@@ -27,45 +30,6 @@ final class OpenclaWP_Admin {
 			'dashicons-format-chat',
 			60
 		);
-
-		add_submenu_page(
-			self::PAGE_SLUG,
-			__( 'Chat', 'openclawp' ),
-			__( 'Chat', 'openclawp' ),
-			'manage_options',
-			self::PAGE_SLUG,
-			array( __CLASS__, 'render_chat_page' )
-		);
-	}
-
-	public static function enqueue_assets( string $hook ): void {
-		if ( 'toplevel_page_' . self::PAGE_SLUG !== $hook ) {
-			return;
-		}
-
-		wp_enqueue_style(
-			self::SCRIPT_HANDLE,
-			plugins_url( 'assets/admin-chat.css', OPENCLAWP_PLUGIN_FILE ),
-			array(),
-			OPENCLAWP_VERSION
-		);
-
-		wp_enqueue_script(
-			self::SCRIPT_HANDLE,
-			plugins_url( 'assets/admin-chat.js', OPENCLAWP_PLUGIN_FILE ),
-			array( 'wp-api-fetch' ),
-			OPENCLAWP_VERSION,
-			true
-		);
-
-		wp_localize_script(
-			self::SCRIPT_HANDLE,
-			'openclaWPConfig',
-			array(
-				'restNamespace' => 'openclawp/v1',
-				'nonce'         => wp_create_nonce( 'wp_rest' ),
-			)
-		);
 	}
 
 	public static function render_chat_page(): void {
@@ -75,39 +39,7 @@ final class OpenclaWP_Admin {
 			<p class="description">
 				<?php esc_html_e( 'Talk to a registered agent. Sessions persist as openclawp_session posts.', 'openclawp' ); ?>
 			</p>
-
-			<div class="openclawp-toolbar">
-				<label for="openclawp-agent">
-					<?php esc_html_e( 'Agent', 'openclawp' ); ?>
-				</label>
-				<select id="openclawp-agent">
-					<?php foreach ( wp_get_agents() as $agent_slug => $agent_obj ) : ?>
-						<option value="<?php echo esc_attr( (string) $agent_slug ); ?>">
-							<?php echo esc_html( $agent_obj instanceof WP_Agent ? $agent_obj->get_label() : (string) $agent_slug ); ?>
-						</option>
-					<?php endforeach; ?>
-				</select>
-
-				<button type="button" id="openclawp-new-session" class="button">
-					<?php esc_html_e( 'New session', 'openclawp' ); ?>
-				</button>
-
-				<span id="openclawp-session-id" class="openclawp-session-id"></span>
-			</div>
-
-			<div id="openclawp-transcript" class="openclawp-transcript" aria-live="polite"></div>
-
-			<form id="openclawp-form" class="openclawp-form">
-				<textarea
-					id="openclawp-input"
-					rows="3"
-					placeholder="<?php esc_attr_e( 'Type a message…', 'openclawp' ); ?>"
-					required
-				></textarea>
-				<button type="submit" class="button button-primary">
-					<?php esc_html_e( 'Send', 'openclawp' ); ?>
-				</button>
-			</form>
+			<?php echo do_blocks( '<!-- wp:openclawp/chat /-->' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- do_blocks output is safe. ?>
 		</div>
 		<?php
 	}

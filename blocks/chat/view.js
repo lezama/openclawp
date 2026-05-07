@@ -1,13 +1,16 @@
 /* global wp, openclaWPConfig */
-( function () {
+function openclaWPInitChat() {
 	'use strict';
 
 	const config = window.openclaWPConfig || { restNamespace: 'openclawp/v1', nonce: '' };
-	const apiFetch = wp && wp.apiFetch;
+	const apiFetch = window.wp && window.wp.apiFetch;
 	if ( ! apiFetch ) {
 		return;
 	}
-	apiFetch.use( apiFetch.createNonceMiddleware( config.nonce ) );
+	if ( config.nonce && ! apiFetch._openclawpNonceAttached ) {
+		apiFetch.use( apiFetch.createNonceMiddleware( config.nonce ) );
+		apiFetch._openclawpNonceAttached = true;
+	}
 
 	const SESSION_KEY = 'openclawp:active-session';
 
@@ -19,6 +22,11 @@
 		form:       document.getElementById( 'openclawp-form' ),
 		input:      document.getElementById( 'openclawp-input' ),
 	};
+
+	if ( ! els.form || ! els.transcript ) {
+		// Block markup not on this page (e.g. plugin loaded but block not rendered).
+		return;
+	}
 
 	let sessionId = sessionStorage.getItem( SESSION_KEY ) || null;
 
@@ -109,4 +117,10 @@
 	} );
 
 	rehydrateSession();
-} )();
+}
+
+if ( document.readyState === 'loading' ) {
+	document.addEventListener( 'DOMContentLoaded', openclaWPInitChat );
+} else {
+	openclaWPInitChat();
+}

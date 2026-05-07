@@ -1,0 +1,24 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "openclawp/chat",
+	"version": "0.1.0",
+	"title": "openclaWP Chat",
+	"category": "widgets",
+	"description": "Chat with a registered openclaWP agent. Persists transcripts and supports multi-turn conversations.",
+	"textdomain": "openclawp",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": false
+	},
+	"attributes": {
+		"defaultAgent": {
+			"type": "string",
+			"default": ""
+		}
+	},
+	"render": "file:./render.php",
+	"viewScript": "file:./view.js",
+	"viewStyle": "file:./view.css"
+}
