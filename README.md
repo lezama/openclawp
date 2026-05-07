@@ -131,8 +131,10 @@ ollama rm gemma4:26b
 
 ## Quickstart — register your own agent
 
+Agent registration is **not** an openclaWP API. It's an `agents-api` API. Hook the substrate's own `wp_agents_api_init` action — that way your plugin works against any agents-api consumer (openclaWP, Data Machine, future others), not just this one.
+
 ```php
-add_action( 'openclawp_register_agents', function () {
+add_action( 'wp_agents_api_init', function () {
     wp_register_agent( 'my-agent', array(
         'label'       => __( 'My Agent', 'my-plugin' ),
         'description' => 'A short system prompt and persona description.',
@@ -146,14 +148,15 @@ add_action( 'openclawp_register_agents', function () {
 } );
 ```
 
-Agents become immediately available in the admin chat picker and via `GET /wp-json/openclawp/v1/agents`.
+When openclaWP is active, registered agents are immediately selectable in the admin chat picker and listed by `GET /wp-json/openclawp/v1/agents`.
 
 ## Filters reference
 
-- `openclawp_register_agents` — fires inside `wp_agents_api_init`. Call `wp_register_agent()` from here.
 - `openclawp_conversation_store` — replace the default CPT-backed store (e.g. with the upcoming `agents-api-default-stores` companion plugin or a custom-table store at scale).
 - `openclawp_turn_runner_factory` — swap the provider call. Receives a default factory wrapping `wp_ai_client_prompt()`. Return a `callable( WP_Agent ): callable` factory.
 - `openclawp_rest_permission_callback` — override the default `manage_options` gate on REST routes.
+
+For agent registration use the substrate's hook (`wp_agents_api_init`), not an openclaWP-specific one. See [Quickstart](#quickstart--register-your-own-agent).
 
 ## REST routes
 
