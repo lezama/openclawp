@@ -38,6 +38,6 @@ if ( ! defined( 'AGENTS_API_LOADED' ) ) {
 	}
 }
 
-require_once OPENCLAWP_PATH . 'includes/class-openclawp-bootstrap.php';
+require_once OPENCLAWP_PATH . 'includes/autoload.php';
 
 add_action( 'plugins_loaded', array( 'OpenclaWP_Bootstrap', 'init' ), 20 );

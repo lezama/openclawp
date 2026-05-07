@@ -22,21 +22,16 @@ final class OpenclaWP_Bootstrap {
 			return;
 		}
 
-		require_once OPENCLAWP_PATH . 'includes/class-openclawp-conversation-store.php';
-		require_once OPENCLAWP_PATH . 'includes/class-openclawp-agent-registrar.php';
-		require_once OPENCLAWP_PATH . 'includes/class-openclawp-message-adapter.php';
-		require_once OPENCLAWP_PATH . 'includes/class-openclawp-runner.php';
-		require_once OPENCLAWP_PATH . 'includes/class-openclawp-rest.php';
-		require_once OPENCLAWP_PATH . 'includes/class-openclawp-abilities.php';
-		require_once OPENCLAWP_PATH . 'includes/class-openclawp-event-sink.php';
-		require_once OPENCLAWP_PATH . 'includes/class-openclawp-admin.php';
-
+		// Register hooks. Class files load lazily through includes/autoload.php
+		// the first time PHP needs to construct or call into a class.
 		add_action( 'init', array( 'OpenclaWP_Conversation_Store', 'register_post_type' ), 5 );
 		OpenclaWP_Agent_Registrar::register();
 		OpenclaWP_Abilities::register();
 		OpenclaWP_Event_Sink::register();
 		OpenclaWP_Rest::register();
-		OpenclaWP_Admin::register();
+		if ( is_admin() ) {
+			OpenclaWP_Admin::register();
+		}
 	}
 
 	private static function has_required_dependencies(): bool {
