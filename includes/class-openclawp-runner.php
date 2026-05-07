@@ -72,7 +72,7 @@ final class OpenclaWP_Runner {
 			'content' => $message,
 		);
 
-		$turn_runner = self::build_turn_runner( $agent, $session );
+		$turn_runner = self::build_turn_runner( $agent, $session, $session_id );
 
 		// Don't pass on_event — OpenclaWP_Event_Sink already subscribes to the canonical
 		// `agents_api_loop_event` action. Doubling up would log every event twice.
@@ -101,15 +101,30 @@ final class OpenclaWP_Runner {
 	 * Build the closure passed to the loop. Filterable so adopters can swap
 	 * providers (e.g. Menta-flavored Gemini-OAuth) without touching this file.
 	 *
-	 * @param WP_Agent $agent   Registered agent definition.
-	 * @param array    $session Current session snapshot.
+	 * @param WP_Agent $agent      Registered agent definition.
+	 * @param array    $session    Current session snapshot.
+	 * @param string   $session_id Session UUID for telemetry attribution.
 	 *
 	 * @return callable
 	 */
-	private static function build_turn_runner( WP_Agent $agent, array $session ): callable {
-		$default_factory = static function ( WP_Agent $agent_obj ): callable {
-			return static function ( array $messages, array $context ) use ( $agent_obj ): array {
+	private static function build_turn_runner( WP_Agent $agent, array $session, string $session_id ): callable {
+		$default_factory = static function ( WP_Agent $agent_obj ) use ( $session_id ): callable {
+			return static function ( array $messages, array $context ) use ( $agent_obj, $session_id ): array {
+				$telemetry = array(
+					'agent_slug'  => $agent_obj->get_slug(),
+					'session_id'  => $session_id,
+					'provider'    => '',
+					'model'       => '',
+					'token_usage' => array(),
+					'duration_ms' => 0,
+					'success'     => false,
+					'error'       => null,
+				);
+
 				if ( ! function_exists( 'wp_ai_client_prompt' ) ) {
+					$telemetry['error'] = 'wp_ai_client_prompt_unavailable';
+					self::emit_chat_telemetry( $telemetry );
+
 					return array(
 						'messages' => array_merge(
 							$messages,
@@ -126,18 +141,30 @@ final class OpenclaWP_Runner {
 				}
 
 				$ai_messages = OpenclaWP_Message_Adapter::to_ai_client_messages( $messages );
-				$builder     = wp_ai_client_prompt( $ai_messages );
 
-				$generated = $builder->generate_text_result();
+				$start_us  = microtime( true );
+				$generated = wp_ai_client_prompt( $ai_messages )->generate_text_result();
+				$telemetry['duration_ms'] = (int) round( ( microtime( true ) - $start_us ) * 1000 );
 
 				$reply = '';
 				if ( is_wp_error( $generated ) ) {
-					$reply = '[provider error: ' . $generated->get_error_message() . ']';
-				} elseif ( is_object( $generated ) && method_exists( $generated, 'toText' ) ) {
-					$reply = (string) $generated->toText();
+					$reply              = '[provider error: ' . $generated->get_error_message() . ']';
+					$telemetry['error'] = (string) $generated->get_error_code();
+				} elseif ( is_object( $generated ) ) {
+					$telemetry['success']     = true;
+					$telemetry['provider']    = self::extract_provider_id( $generated );
+					$telemetry['model']       = self::extract_model_id( $generated );
+					$telemetry['token_usage'] = self::extract_token_usage( $generated );
+
+					if ( method_exists( $generated, 'toText' ) ) {
+						$reply = (string) $generated->toText();
+					}
 				} elseif ( is_string( $generated ) ) {
-					$reply = $generated;
+					$reply               = $generated;
+					$telemetry['success'] = true;
 				}
+
+				self::emit_chat_telemetry( $telemetry );
 
 				return array(
 					'messages' => array_merge(
@@ -171,4 +198,72 @@ final class OpenclaWP_Runner {
 		return call_user_func( $factory, $agent );
 	}
 
+	/**
+	 * Emit a structured telemetry event for one chat turn.
+	 *
+	 * Subscribers (the bundled event sink, plus anything else that hooks
+	 * `openclawp_chat_turn_completed`) receive a snapshot of agent slug,
+	 * session id, provider/model, token usage, wall duration, and
+	 * success/error.
+	 *
+	 * @param array $telemetry Read-only snapshot. See doc comment in
+	 *                         build_turn_runner() for the shape.
+	 */
+	private static function emit_chat_telemetry( array $telemetry ): void {
+		/**
+		 * Fires after each chat turn — with or without a successful provider call.
+		 *
+		 * Telemetry shape:
+		 *   - agent_slug:  string
+		 *   - session_id:  string (UUIDv4)
+		 *   - provider:    string ("anthropic", "ollama", "")
+		 *   - model:       string ("claude-opus-4-7", "gemma4:26b", "")
+		 *   - token_usage: array{input?:int,output?:int,total?:int}
+		 *   - duration_ms: int  (0 when the provider was never reached)
+		 *   - success:     bool
+		 *   - error:       ?string  (provider error code, or null on success)
+		 *
+		 * @param array $telemetry Read-only snapshot.
+		 */
+		do_action( 'openclawp_chat_turn_completed', $telemetry );
+	}
+
+	private static function extract_provider_id( $result ): string {
+		if ( ! is_object( $result ) || ! method_exists( $result, 'getProviderMetadata' ) ) {
+			return '';
+		}
+		$pm = $result->getProviderMetadata();
+		if ( ! is_object( $pm ) ) {
+			return '';
+		}
+		return method_exists( $pm, 'getId' ) ? (string) $pm->getId() : '';
+	}
+
+	private static function extract_model_id( $result ): string {
+		if ( ! is_object( $result ) || ! method_exists( $result, 'getModelMetadata' ) ) {
+			return '';
+		}
+		$mm = $result->getModelMetadata();
+		if ( ! is_object( $mm ) ) {
+			return '';
+		}
+		return method_exists( $mm, 'getId' ) ? (string) $mm->getId() : '';
+	}
+
+	private static function extract_token_usage( $result ): array {
+		if ( ! is_object( $result ) || ! method_exists( $result, 'getTokenUsage' ) ) {
+			return array();
+		}
+		$usage = $result->getTokenUsage();
+		if ( ! is_object( $usage ) ) {
+			return array();
+		}
+		$out = array();
+		foreach ( array( 'getPromptTokens' => 'input', 'getCompletionTokens' => 'output', 'getTotalTokens' => 'total' ) as $method => $key ) {
+			if ( method_exists( $usage, $method ) ) {
+				$out[ $key ] = (int) $usage->{$method}();
+			}
+		}
+		return $out;
+	}
 }
