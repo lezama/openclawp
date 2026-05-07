@@ -93,7 +93,7 @@ Confirm openclaWP routes a real chat to Gemma:
 wp eval '
 wp_set_current_user( 1 );
 $req = new WP_REST_Request( "POST", "/openclawp/v1/chat" );
-$req->set_body_params( array( "agent" => "openclawp-default", "message" => "Reply with exactly one word: ping" ) );
+$req->set_body_params( array( "agent" => "openclawp-example", "message" => "Reply with exactly one word: ping" ) );
 $res = rest_do_request( $req );
 $d = $res->get_data();
 $session = $d["session_id"] ?? "";
@@ -178,7 +178,7 @@ This is deliberate: no new tables, fully WordPress-canonical, and trivially swap
 
 ## Architecture (one paragraph)
 
-`openclawp.php` boots agents-api if not already loaded, then hooks `plugins_loaded:20` to wire services. `OpenclaWP_Agent_Registrar` registers `openclawp-default` on `wp_agents_api_init`. `OpenclaWP_Conversation_Store` implements both `WP_Agent_Conversation_Store` and `WP_Agent_Conversation_Lock` against `wp_posts` + `wp_postmeta`. `OpenclaWP_Runner` wraps `\AgentsAPI\AI\WP_Agent_Conversation_Loop::run()`; the turn runner closure delegates to `wp_ai_client_prompt()`. `OpenclaWP_Rest` exposes `/openclawp/v1/`. `OpenclaWP_Admin` renders a vanilla-JS chat page that calls those routes.
+`openclawp.php` boots agents-api if not already loaded, then hooks `plugins_loaded:20` to wire services. `OpenclaWP_Agent_Registrar` is opt-in: behind the `openclawp_register_example_agent` filter (default off), it registers a smoke-test agent `openclawp-example` on `wp_agents_api_init`. Real agents are registered by downstream plugins on the same hook. `OpenclaWP_Conversation_Store` implements both `WP_Agent_Conversation_Store` and `WP_Agent_Conversation_Lock` against `wp_posts` + `wp_postmeta`. `OpenclaWP_Runner` wraps `\AgentsAPI\AI\WP_Agent_Conversation_Loop::run()`; the turn runner closure delegates to `wp_ai_client_prompt()`. `OpenclaWP_Rest` exposes `/openclawp/v1/`. `OpenclaWP_Admin` renders a vanilla-JS chat page that calls those routes.
 
 ## Source provenance
 
