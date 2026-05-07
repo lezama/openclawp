@@ -39,7 +39,7 @@ add_action( 'wp_agents_api_init', function () {
 
 ## Surfaces
 
-The chat path is exposed three ways. Same shared implementation; pick whichever fits the caller.
+The chat path is exposed four ways. Same shared implementation; pick whichever fits the caller.
 
 **Block** — drop `<!-- wp:openclawp/chat /-->` in any post / template / shortcode / `do_blocks()` call. The wp-admin **openclaWP → Chat** page renders this same block.
 
@@ -63,6 +63,8 @@ $result = wp_get_ability( 'openclawp/chat' )->execute( array(
 
 Both routes require `manage_options` by default; gate via `openclawp_rest_permission_callback`.
 
+**WhatsApp** (inbound + outbound via Meta's Cloud API). Off by default. Opt in with `add_filter( 'openclawp_register_whatsapp', '__return_true' )`, configure credentials at **openclaWP → WhatsApp**, point Meta's webhook at `/openclawp/v1/whatsapp/webhook`. Inbound text is signature-verified (`X-Hub-Signature-256` HMAC against your App Secret), dispatched to the configured agent, and the reply is posted back via the Graph API. Sessions persist per phone number — your conversation history follows you across days. See [`docs/whatsapp-setup.md`](docs/whatsapp-setup.md) for the full Meta-side runbook.
+
 ## Filters reference
 
 | Filter | What it changes |
@@ -72,6 +74,7 @@ Both routes require `manage_options` by default; gate via `openclawp_rest_permis
 | `openclawp_turn_runner_factory`       | Replace the wp-ai-client turn runner with a custom one (e.g. Gemini-OAuth). |
 | `openclawp_rest_permission_callback`  | Override the default `manage_options` REST gate. |
 | `openclawp_chat_ability_permission`   | Override the default `manage_options` gate on `openclawp/chat`. |
+| `openclawp_register_whatsapp`         | Register the WhatsApp Cloud API ingress (webhook + outbound + settings page). Default `false`. |
 
 The `openclawp_chat_turn_completed` action fires after every chat turn with provider, model, token usage, and wall duration — see [docs/instrumentation.md](docs/instrumentation.md) (TBD) or grep `error_log` for `[openclawp] chat_turn=…`.
 
