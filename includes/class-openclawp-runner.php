@@ -169,9 +169,20 @@ final class OpenclaWP_Runner {
 					$builder = $builder->using_function_declarations( ...$function_declarations );
 				}
 
+				// WP_AI_Client_Prompt_Builder forwards these via __call, so
+				// method_exists() returns false for them — call directly.
 				$description = $agent_obj->get_description();
-				if ( '' !== $description && method_exists( $builder, 'using_system_instruction' ) ) {
+				if ( '' !== $description ) {
 					$builder = $builder->using_system_instruction( $description );
+				}
+
+				// Respect the agent's declared provider + model when set. Without
+				// this, wp-ai-client's auto-selection picks whichever model the
+				// active provider plugin happens to surface — which on Ollama can
+				// drift from what the site admin actually configured.
+				$preference = self::resolve_model_preference( $agent_obj );
+				if ( null !== $preference ) {
+					$builder = $builder->using_model_preference( $preference );
 				}
 
 				$start_us  = microtime( true );
@@ -218,6 +229,34 @@ final class OpenclaWP_Runner {
 		$factory = apply_filters( 'openclawp_turn_runner_factory', $default_factory, $session );
 
 		return call_user_func( $factory, $agent );
+	}
+
+	/**
+	 * Resolve the agent's preferred provider + model into the shape
+	 * `usingModelPreference()` accepts.
+	 *
+	 *  - Both `provider` and `model` set (and not 'auto') → `[provider, model]` tuple
+	 *    (locks both axes; SDK will error rather than fall back).
+	 *  - Only `model` set → plain string (matches across providers).
+	 *  - Neither set or both 'auto' → null (don't pin; provider plugin's
+	 *    auto-selection wins).
+	 *
+	 * @return array{0:string,1:string}|string|null
+	 */
+	private static function resolve_model_preference( WP_Agent $agent ) {
+		$config   = $agent->get_default_config();
+		$model    = isset( $config['model'] ) && is_string( $config['model'] ) ? trim( $config['model'] ) : '';
+		$provider = isset( $config['provider'] ) && is_string( $config['provider'] ) ? trim( $config['provider'] ) : '';
+
+		if ( '' === $model || 'auto' === $model ) {
+			return null;
+		}
+
+		if ( '' !== $provider && 'auto' !== $provider ) {
+			return array( $provider, $model );
+		}
+
+		return $model;
 	}
 
 	/**
