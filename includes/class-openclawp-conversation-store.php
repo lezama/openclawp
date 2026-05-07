@@ -252,6 +252,8 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 	/* ---------------------------- Lock contract --------------------------- */
 
 	public function acquire_session_lock( string $session_id, int $ttl_seconds = 300 ): ?string {
+		global $wpdb;
+
 		$post = $this->find_post_by_session_id( $session_id );
 		if ( null === $post ) {
 			return null;
@@ -266,23 +268,49 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 			)
 		);
 
-		// Atomic test-and-set via add_post_meta with $unique=true.
+		// Fast path: no lock present. add_post_meta with $unique=true is atomic.
 		$added = add_post_meta( $post->ID, self::META_LOCK, $value, true );
 		if ( $added ) {
 			return $token;
 		}
 
-		// Lock exists. If it has expired, reclaim it.
-		$existing = $this->read_lock( $post->ID );
-		if ( null !== $existing && (int) ( $existing['expires'] ?? 0 ) <= time() ) {
-			delete_post_meta( $post->ID, self::META_LOCK );
-			$added_after_expiry = add_post_meta( $post->ID, self::META_LOCK, $value, true );
-			if ( $added_after_expiry ) {
-				return $token;
-			}
+		// Slow path: a lock row exists. Read it; if not yet expired, lose.
+		$existing_raw = get_post_meta( $post->ID, self::META_LOCK, true );
+		if ( ! is_string( $existing_raw ) || '' === $existing_raw ) {
+			// Race: meta disappeared between calls. Retry once.
+			$retry = add_post_meta( $post->ID, self::META_LOCK, $value, true );
+			return $retry ? $token : null;
 		}
 
-		return null;
+		$existing = json_decode( $existing_raw, true );
+		if ( ! is_array( $existing ) || (int) ( $existing['expires'] ?? 0 ) > time() ) {
+			return null;
+		}
+
+		// Atomic compare-and-swap on the expired lock. The WHERE meta_value =
+		// $existing_raw clause is the test; the SET is the swap. Concurrent
+		// callers that read the same expired lock will race here, and only one
+		// will see rows_affected=1.
+		$rows = $wpdb->update(
+			$wpdb->postmeta,
+			array( 'meta_value' => $value ),
+			array(
+				'post_id'    => $post->ID,
+				'meta_key'   => self::META_LOCK,
+				'meta_value' => $existing_raw,
+			),
+			array( '%s' ),
+			array( '%d', '%s', '%s' )
+		);
+
+		if ( false === $rows ) {
+			return null;
+		}
+
+		// Bust the post-meta cache so subsequent reads see the new lock value.
+		wp_cache_delete( $post->ID, 'post_meta' );
+
+		return 1 === (int) $rows ? $token : null;
 	}
 
 	public function release_session_lock( string $session_id, string $lock_token ): bool {
