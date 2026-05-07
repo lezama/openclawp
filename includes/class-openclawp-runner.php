@@ -125,24 +125,16 @@ final class OpenclaWP_Runner {
 					);
 				}
 
-				$builder = wp_ai_client_prompt( $messages );
-
-				$description = $agent_obj->get_description();
-				if ( '' !== $description && method_exists( $builder, 'using_system_instruction' ) ) {
-					$builder = $builder->using_system_instruction( $description );
-				}
+				$ai_messages = self::to_ai_client_messages( $messages );
+				$builder     = wp_ai_client_prompt( $ai_messages );
 
 				$generated = $builder->generate_text_result();
 
 				$reply = '';
-				if ( is_object( $generated ) ) {
-					if ( method_exists( $generated, 'to_text' ) ) {
-						$reply = (string) $generated->to_text();
-					} elseif ( method_exists( $generated, '__toString' ) ) {
-						$reply = (string) $generated;
-					} elseif ( method_exists( $generated, 'text' ) ) {
-						$reply = (string) $generated->text();
-					}
+				if ( is_wp_error( $generated ) ) {
+					$reply = '[provider error: ' . $generated->get_error_message() . ']';
+				} elseif ( is_object( $generated ) && method_exists( $generated, 'toText' ) ) {
+					$reply = (string) $generated->toText();
 				} elseif ( is_string( $generated ) ) {
 					$reply = $generated;
 				}
@@ -177,6 +169,61 @@ final class OpenclaWP_Runner {
 		$factory = apply_filters( 'openclawp_turn_runner_factory', $default_factory, $session );
 
 		return call_user_func( $factory, $agent );
+	}
+
+	/**
+	 * Convert the loop's transcript shape (`[{role, content}, ...]`) into a list of
+	 * WP AI Client `Message` DTOs.
+	 *
+	 * Roles map: user → user, assistant → model. Tool / system messages are
+	 * skipped for the MVP — the loop's tool mediation isn't wired yet.
+	 *
+	 * @param array<int,array<string,mixed>> $messages Transcript messages.
+	 * @return array
+	 */
+	private static function to_ai_client_messages( array $messages ): array {
+		if ( ! class_exists( '\\WordPress\\AiClient\\Messages\\DTO\\Message' ) ) {
+			return $messages;
+		}
+
+		$out = array();
+		foreach ( $messages as $message ) {
+			$role    = (string) ( $message['role'] ?? '' );
+			$content = $message['content'] ?? '';
+
+			$text = '';
+			if ( is_string( $content ) ) {
+				$text = $content;
+			} elseif ( is_array( $content ) ) {
+				$text = '';
+				foreach ( $content as $part ) {
+					if ( is_string( $part ) ) {
+						$text .= $part;
+					} elseif ( is_array( $part ) && isset( $part['text'] ) ) {
+						$text .= (string) $part['text'];
+					}
+				}
+			}
+
+			if ( '' === $text ) {
+				continue;
+			}
+
+			if ( 'user' === $role ) {
+				$role_enum = \WordPress\AiClient\Messages\Enums\MessageRoleEnum::user();
+			} elseif ( 'assistant' === $role || 'model' === $role ) {
+				$role_enum = \WordPress\AiClient\Messages\Enums\MessageRoleEnum::model();
+			} else {
+				continue;
+			}
+
+			$out[] = new \WordPress\AiClient\Messages\DTO\Message(
+				$role_enum,
+				array( new \WordPress\AiClient\Messages\DTO\MessagePart( $text ) )
+			);
+		}
+
+		return $out;
 	}
 
 	private static function extract_assistant_text( array $messages ): string {
