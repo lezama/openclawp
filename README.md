@@ -19,7 +19,7 @@ It **isn't** an end-user product. There's no domain logic, no UI shell beyond th
 ## Install
 
 ```bash
-composer require automattic/openclawp:dev-main
+composer require lezama/openclawp:dev-main
 wp plugin activate agents-api openclawp
 ```
 

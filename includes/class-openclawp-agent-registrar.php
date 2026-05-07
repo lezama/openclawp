@@ -33,7 +33,7 @@ final class OpenclaWP_Agent_Registrar {
 				'meta'           => array(
 					'source_plugin'  => 'openclawp/openclawp.php',
 					'source_type'    => 'bundled-agent',
-					'source_package' => 'automattic/openclawp',
+					'source_package' => 'lezama/openclawp',
 					'source_version' => OPENCLAWP_VERSION,
 				),
 			)

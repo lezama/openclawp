@@ -1,11 +1,11 @@
 <?php
 /**
  * Plugin Name: openclaWP
- * Plugin URI: https://github.com/Automattic/openclawp
+ * Plugin URI: https://github.com/lezama/openclawp
  * Description: Generic chat-with-an-agent WordPress plugin built on Automattic/agents-api. Registers an example agent and exposes REST + admin chat surfaces; downstream plugins register additional agents.
  * Version: 0.1.0
- * Author: Automattic
- * Author URI: https://automattic.com/
+ * Author: Miguel Lezama
+ * Author URI: https://github.com/lezama
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: openclawp

@@ -1,5 +1,5 @@
 {
-  "name": "automattic/openclawp",
+  "name": "lezama/openclawp",
   "description": "Generic chat-with-an-agent WordPress plugin built on Automattic/agents-api.",
   "type": "wordpress-plugin",
   "license": "GPL-2.0-or-later",
