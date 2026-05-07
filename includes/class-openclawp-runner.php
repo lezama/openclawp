@@ -74,12 +74,13 @@ final class OpenclaWP_Runner {
 
 		$turn_runner = self::build_turn_runner( $agent, $session );
 
+		// Don't pass on_event — OpenclaWP_Event_Sink already subscribes to the canonical
+		// `agents_api_loop_event` action. Doubling up would log every event twice.
 		$loop_options = array(
 			'max_turns'             => 1,
 			'transcript_lock'       => $store,
 			'transcript_session_id' => $session_id,
 			'transcript_lock_ttl'   => 120,
-			'on_event'              => array( 'OpenclaWP_Event_Sink', 'observe' ),
 		);
 
 		$result = WP_Agent_Conversation_Loop::run( $messages, $turn_runner, $loop_options );
