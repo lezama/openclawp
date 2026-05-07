@@ -60,6 +60,22 @@ final class OpenclaWP_Abilities {
 		if ( apply_filters( 'openclawp_register_loop_demo', false ) ) {
 			self::register_get_time_ability();
 		}
+
+		/**
+		 * Whether to register the bundled site-introspection demo fixtures
+		 * (`openclawp/get-recent-posts`, `openclawp/count-comments`,
+		 * `openclawp/get-active-plugins`, `openclawp/get-current-user`
+		 * abilities + `openclawp-site-introspection` agent).
+		 *
+		 * Off by default. Real consumers should register their own agents and
+		 * abilities; this is fixture code that demonstrates a multi-tool agent
+		 * answering questions about the live site.
+		 *
+		 * @param bool $enabled Default false.
+		 */
+		if ( apply_filters( 'openclawp_register_site_introspection', false ) ) {
+			OpenclaWP_Site_Abilities::register();
+		}
 	}
 
 	private static function register_get_time_ability(): void {

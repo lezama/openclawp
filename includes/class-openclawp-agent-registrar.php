@@ -23,6 +23,44 @@ final class OpenclaWP_Agent_Registrar {
 	public static function register(): void {
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_example_agent' ), 10 );
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_loop_demo_agent' ), 10 );
+		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_site_introspection_agent' ), 10 );
+	}
+
+	public static function maybe_register_site_introspection_agent(): void {
+		// Reuses the same opt-in filter as the site-introspection abilities so they
+		// ship together — registering the agent without the abilities would be useless.
+		if ( ! apply_filters( 'openclawp_register_site_introspection', false ) ) {
+			return;
+		}
+
+		wp_register_agent(
+			'openclawp-site-introspection',
+			array(
+				'label'          => __( 'openclaWP Site Introspection', 'openclawp' ),
+				'description'    => __(
+					'You are a helpful assistant that answers questions about this WordPress site. You have read-only access to four tools: openclawp__get-recent-posts (recent published posts), openclawp__count-comments (comment moderation totals), openclawp__get-active-plugins (currently active plugins), and openclawp__get-current-user (the human you are talking to). Always call the relevant tool before answering a factual question — never guess. Quote tool output values directly. Be concise.',
+					'openclawp'
+				),
+				'owner_resolver' => static fn(): int => get_current_user_id(),
+				'default_config' => array(
+					'provider'  => 'auto',
+					'model'     => 'auto',
+					'tools'     => array(
+						'openclawp/get-recent-posts',
+						'openclawp/count-comments',
+						'openclawp/get-active-plugins',
+						'openclawp/get-current-user',
+					),
+					'max_turns' => 6,
+				),
+				'meta'           => array(
+					'source_plugin'  => 'openclawp/openclawp.php',
+					'source_type'    => 'site-introspection-demo-agent',
+					'source_package' => 'lezama/openclawp',
+					'source_version' => OPENCLAWP_VERSION,
+				),
+			)
+		);
 	}
 
 	public static function maybe_register_loop_demo_agent(): void {
