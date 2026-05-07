@@ -30,7 +30,7 @@ final class OpenclaWP_Bootstrap {
 		require_once OPENCLAWP_PATH . 'includes/class-openclawp-event-sink.php';
 		require_once OPENCLAWP_PATH . 'includes/class-openclawp-admin.php';
 
-		OpenclaWP_Conversation_Store::register_post_type();
+		add_action( 'init', array( 'OpenclaWP_Conversation_Store', 'register_post_type' ), 5 );
 		OpenclaWP_Agent_Registrar::register();
 		OpenclaWP_Abilities::register();
 		OpenclaWP_Event_Sink::register();
