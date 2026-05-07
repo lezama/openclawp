@@ -13,6 +13,7 @@
 defined( 'ABSPATH' ) || exit;
 
 use AgentsAPI\AI\WP_Agent_Conversation_Loop;
+use AgentsAPI\Core\Database\Chat\WP_Agent_Conversation_Store;
 use AgentsAPI\Core\Workspace\WP_Agent_Workspace_Scope;
 
 final class OpenclaWP_Runner {
@@ -43,7 +44,13 @@ final class OpenclaWP_Runner {
 
 		if ( null === $session_id || '' === trim( $session_id ) ) {
 			$workspace  = new WP_Agent_Workspace_Scope( 'site', (string) get_current_blog_id() );
-			$session_id = $store->create_session( $workspace, $user_id, 0, array( 'agent_slug' => $agent_slug ), 'chat' );
+			$session_id = $store->create_session(
+				$workspace,
+				$user_id,
+				0,
+				array( WP_Agent_Conversation_Store::META_KEY_AGENT_SLUG => $agent_slug ),
+				'chat'
+			);
 			if ( '' === $session_id ) {
 				return array(
 					'session_id' => '',
@@ -90,12 +97,11 @@ final class OpenclaWP_Runner {
 			'transcript_lock'       => $store,
 			'transcript_session_id' => $session_id,
 			'transcript_lock_ttl'   => 300,
-			// The loop breaks after every turn unless should_continue returns
-			// true. We rely on max_turns + completion_policy (when set) to
-			// stop, so always allow continuation here.
-			'should_continue'       => '__return_true',
 		);
 		if ( null !== $tool_executor ) {
+			// Canonical's loop defaults `should_continue` to continue-always when
+			// `tool_executor` + `tool_declarations` are both present (agents-api
+			// PR #97), so we don't need to override it.
 			$loop_options['tool_executor']     = $tool_executor;
 			$loop_options['tool_declarations'] = $tools['declarations'];
 		}
@@ -104,7 +110,11 @@ final class OpenclaWP_Runner {
 
 		$final_messages = isset( $result['messages'] ) && is_array( $result['messages'] ) ? $result['messages'] : $messages;
 
-		$store->update_session( $session_id, $final_messages, array( 'agent_slug' => $agent_slug ) );
+		$store->update_session(
+			$session_id,
+			$final_messages,
+			array( WP_Agent_Conversation_Store::META_KEY_AGENT_SLUG => $agent_slug )
+		);
 
 		return array(
 			'session_id' => $session_id,
