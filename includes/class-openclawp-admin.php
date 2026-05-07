@@ -80,7 +80,13 @@ final class OpenclaWP_Admin {
 				<label for="openclawp-agent">
 					<?php esc_html_e( 'Agent', 'openclawp' ); ?>
 				</label>
-				<select id="openclawp-agent"></select>
+				<select id="openclawp-agent">
+					<?php foreach ( wp_get_agents() as $agent_slug => $agent_obj ) : ?>
+						<option value="<?php echo esc_attr( (string) $agent_slug ); ?>">
+							<?php echo esc_html( $agent_obj instanceof WP_Agent ? $agent_obj->get_label() : (string) $agent_slug ); ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
 
 				<button type="button" id="openclawp-new-session" class="button">
 					<?php esc_html_e( 'New session', 'openclawp' ); ?>

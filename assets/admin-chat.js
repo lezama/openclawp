@@ -52,21 +52,6 @@
 		els.transcript.innerHTML = '';
 	}
 
-	async function loadAgents() {
-		try {
-			const agents = await apiFetch( { path: '/' + config.restNamespace + '/agents' } );
-			els.agent.innerHTML = '';
-			for ( const agent of agents ) {
-				const opt = document.createElement( 'option' );
-				opt.value = agent.slug;
-				opt.textContent = agent.label || agent.slug;
-				els.agent.appendChild( opt );
-			}
-		} catch ( err ) {
-			appendTurn( 'system', 'Failed to load agents: ' + err.message );
-		}
-	}
-
 	async function rehydrateSession() {
 		if ( ! sessionId ) {
 			return;
@@ -123,5 +108,5 @@
 		}
 	} );
 
-	loadAgents().then( rehydrateSession );
+	rehydrateSession();
 } )();

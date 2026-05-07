@@ -162,13 +162,12 @@ For agent registration use the substrate's hook (`wp_agents_api_init`), not an o
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET`    | `/openclawp/v1/agents`               | List registered agents |
-| `POST`   | `/openclawp/v1/chat`                 | Send a message; body: `{ agent, message, session_id? }` |
-| `GET`    | `/openclawp/v1/chat/sessions`        | List the current user's recent sessions |
-| `GET`    | `/openclawp/v1/chat/{session_id}`    | Fetch the full transcript for a session |
-| `DELETE` | `/openclawp/v1/chat/{session_id}`    | Delete a session |
+| `POST` | `/openclawp/v1/chat`                | Send a message; body: `{ agent, message, session_id? }` |
+| `GET`  | `/openclawp/v1/chat/{session_id}`   | Fetch the full transcript for a session |
 
-All routes require `manage_options` by default; gate via `openclawp_rest_permission_callback`.
+Both routes require `manage_options` by default; gate via `openclawp_rest_permission_callback`.
+
+For listing or deleting sessions, query the `openclawp_session` post type via the standard WP REST API (e.g. `GET /wp/v2/openclawp_session?author=…`). For listing agents, call `wp_get_agents()` server-side or read from your block's render context — the substrate is the source of truth, not openclaWP.
 
 ## Storage shape
 

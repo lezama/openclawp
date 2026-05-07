@@ -1,6 +1,12 @@
 <?php
 /**
- * REST routes under /openclawp/v1/.
+ * REST routes under `openclawp/v1/`.
+ *
+ * Deliberately minimal: chat is the one verb worth a custom route. Listing
+ * agents is server-rendered (the in-process registry is authoritative; an
+ * extra network round-trip earns nothing). Listing/deleting sessions is
+ * available via the standard WordPress REST API on the `openclawp_session`
+ * post type — consumers query `/wp/v2/openclawp_session` directly.
  *
  * @package OpenclaWP
  */
@@ -20,51 +26,25 @@ final class OpenclaWP_Rest {
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/agents',
-			array(
-				array(
-					'methods'             => WP_REST_Server::READABLE,
-					'callback'            => array( __CLASS__, 'list_agents' ),
-					'permission_callback' => $permission_callback,
-				),
-			)
-		);
-
-		register_rest_route(
-			self::NAMESPACE,
 			'/chat',
 			array(
-				array(
-					'methods'             => WP_REST_Server::CREATABLE,
-					'callback'            => array( __CLASS__, 'post_chat' ),
-					'permission_callback' => $permission_callback,
-					'args'                => array(
-						'agent'      => array(
-							'type'              => 'string',
-							'required'          => true,
-							'sanitize_callback' => 'sanitize_title',
-						),
-						'message'    => array(
-							'type'     => 'string',
-							'required' => true,
-						),
-						'session_id' => array(
-							'type'     => array( 'string', 'null' ),
-							'required' => false,
-						),
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'post_chat' ),
+				'permission_callback' => $permission_callback,
+				'args'                => array(
+					'agent'      => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_title',
 					),
-				),
-			)
-		);
-
-		register_rest_route(
-			self::NAMESPACE,
-			'/chat/sessions',
-			array(
-				array(
-					'methods'             => WP_REST_Server::READABLE,
-					'callback'            => array( __CLASS__, 'list_sessions' ),
-					'permission_callback' => $permission_callback,
+					'message'    => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+					'session_id' => array(
+						'type'     => array( 'string', 'null' ),
+						'required' => false,
+					),
 				),
 			)
 		);
@@ -73,16 +53,9 @@ final class OpenclaWP_Rest {
 			self::NAMESPACE,
 			'/chat/(?P<session_id>[A-Za-z0-9-]+)',
 			array(
-				array(
-					'methods'             => WP_REST_Server::READABLE,
-					'callback'            => array( __CLASS__, 'get_chat' ),
-					'permission_callback' => $permission_callback,
-				),
-				array(
-					'methods'             => WP_REST_Server::DELETABLE,
-					'callback'            => array( __CLASS__, 'delete_chat' ),
-					'permission_callback' => $permission_callback,
-				),
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'get_chat' ),
+				'permission_callback' => $permission_callback,
 			)
 		);
 	}
@@ -107,19 +80,6 @@ final class OpenclaWP_Rest {
 		}
 
 		return true;
-	}
-
-	public static function list_agents(): WP_REST_Response {
-		$agents = wp_get_agents();
-		$out    = array();
-		foreach ( $agents as $slug => $agent ) {
-			$out[] = array(
-				'slug'        => (string) $slug,
-				'label'       => $agent instanceof WP_Agent ? $agent->get_label() : (string) $slug,
-				'description' => $agent instanceof WP_Agent ? $agent->get_description() : '',
-			);
-		}
-		return rest_ensure_response( $out );
 	}
 
 	public static function post_chat( WP_REST_Request $request ) {
@@ -157,70 +117,17 @@ final class OpenclaWP_Rest {
 			return new WP_Error( 'openclawp_session_not_found', __( 'Session not found.', 'openclawp' ), array( 'status' => 404 ) );
 		}
 
-		if ( ! self::session_is_visible_to_current_user( $session ) ) {
+		if ( ! self::current_user_owns( $session ) ) {
 			return new WP_Error( 'openclawp_forbidden', __( 'Forbidden.', 'openclawp' ), array( 'status' => 403 ) );
 		}
 
 		return rest_ensure_response( $session );
 	}
 
-	public static function delete_chat( WP_REST_Request $request ) {
-		$session_id = (string) $request->get_param( 'session_id' );
-		$store      = OpenclaWP_Conversation_Store::instance();
-		$session    = $store->get_session( $session_id );
-
-		if ( null !== $session && ! self::session_is_visible_to_current_user( $session ) ) {
-			return new WP_Error( 'openclawp_forbidden', __( 'Forbidden.', 'openclawp' ), array( 'status' => 403 ) );
-		}
-
-		$ok = $store->delete_session( $session_id );
-		return rest_ensure_response( array( 'deleted' => $ok ) );
-	}
-
-	public static function list_sessions(): WP_REST_Response {
-		$query = new WP_Query(
-			array(
-				'post_type'              => OpenclaWP_Conversation_Store::POST_TYPE,
-				'post_status'            => 'any',
-				'author'                 => get_current_user_id(),
-				'posts_per_page'         => 50,
-				'orderby'                => 'modified',
-				'order'                  => 'DESC',
-				'no_found_rows'          => true,
-				'update_post_term_cache' => false,
-				'suppress_filters'       => true,
-			)
-		);
-
-		$out = array();
-		foreach ( $query->posts as $post ) {
-			$out[] = array(
-				'session_id' => (string) get_post_meta( $post->ID, '_openclawp_session_id', true ),
-				'title'      => (string) $post->post_title,
-				'agent_slug' => self::resolve_session_agent_slug( $post->ID ),
-				'updated_at' => (string) $post->post_modified_gmt,
-			);
-		}
-
-		return rest_ensure_response( $out );
-	}
-
-	private static function resolve_session_agent_slug( int $post_id ): string {
-		$metadata_raw = get_post_meta( $post_id, '_openclawp_metadata', true );
-		if ( is_string( $metadata_raw ) && '' !== $metadata_raw ) {
-			$decoded = json_decode( $metadata_raw, true );
-			if ( is_array( $decoded ) && isset( $decoded['agent_slug'] ) ) {
-				return (string) $decoded['agent_slug'];
-			}
-		}
-		return '';
-	}
-
-	private static function session_is_visible_to_current_user( array $session ): bool {
-		$current = get_current_user_id();
+	private static function current_user_owns( array $session ): bool {
 		if ( current_user_can( 'manage_options' ) ) {
 			return true;
 		}
-		return (int) ( $session['user_id'] ?? 0 ) === $current;
+		return (int) ( $session['user_id'] ?? 0 ) === get_current_user_id();
 	}
 }
