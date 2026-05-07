@@ -24,7 +24,6 @@ function openclaWPInitChat() {
 	};
 
 	if ( ! els.form || ! els.transcript ) {
-		// Block markup not on this page (e.g. plugin loaded but block not rendered).
 		return;
 	}
 
@@ -41,9 +40,22 @@ function openclaWPInitChat() {
 		}
 	}
 
-	function appendTurn( role, text ) {
+	function clearTranscript() {
+		els.transcript.innerHTML = '';
+	}
+
+	function scrollToBottom() {
+		els.transcript.scrollTop = els.transcript.scrollHeight;
+	}
+
+	function makeRow( kind ) {
 		const wrap = document.createElement( 'div' );
-		wrap.className = 'openclawp-turn openclawp-turn-' + role;
+		wrap.className = 'openclawp-turn openclawp-turn-' + kind;
+		return wrap;
+	}
+
+	function appendTextTurn( role, text ) {
+		const wrap = makeRow( role );
 		const who = document.createElement( 'div' );
 		who.className = 'openclawp-turn-role';
 		who.textContent = role;
@@ -53,32 +65,103 @@ function openclaWPInitChat() {
 		wrap.appendChild( who );
 		wrap.appendChild( body );
 		els.transcript.appendChild( wrap );
-		els.transcript.scrollTop = els.transcript.scrollHeight;
 	}
 
-	function clearTranscript() {
-		els.transcript.innerHTML = '';
+	function appendToolCallTurn( toolName, parameters ) {
+		const wrap = makeRow( 'tool-call' );
+		const summary = document.createElement( 'div' );
+		summary.className = 'openclawp-turn-tool-summary';
+		summary.textContent = '🔧 calling ' + toolName;
+		wrap.appendChild( summary );
+
+		const hasParams = parameters && Object.keys( parameters ).length > 0;
+		if ( hasParams ) {
+			const details = document.createElement( 'details' );
+			const dt = document.createElement( 'summary' );
+			dt.textContent = 'arguments';
+			const pre = document.createElement( 'pre' );
+			pre.textContent = JSON.stringify( parameters, null, 2 );
+			details.appendChild( dt );
+			details.appendChild( pre );
+			wrap.appendChild( details );
+		}
+
+		els.transcript.appendChild( wrap );
 	}
 
-	async function rehydrateSession() {
+	function appendToolResultTurn( toolName, success, payload ) {
+		const wrap = makeRow( 'tool-result' );
+		wrap.classList.toggle( 'openclawp-turn-tool-error', success === false );
+
+		const summary = document.createElement( 'div' );
+		summary.className = 'openclawp-turn-tool-summary';
+		summary.textContent = ( success === false ? '⚠ ' : '↩ ' ) + toolName;
+		wrap.appendChild( summary );
+
+		const details = document.createElement( 'details' );
+		const dt = document.createElement( 'summary' );
+		dt.textContent = 'result';
+		const pre = document.createElement( 'pre' );
+		pre.textContent = JSON.stringify( payload, null, 2 );
+		details.appendChild( dt );
+		details.appendChild( pre );
+		wrap.appendChild( details );
+
+		els.transcript.appendChild( wrap );
+	}
+
+	function renderMessage( msg ) {
+		const type = msg.type || 'text';
+		const role = msg.role || 'unknown';
+
+		if ( type === 'tool_call' ) {
+			const payload = msg.payload || {};
+			appendToolCallTurn(
+				payload.tool_name || 'unknown',
+				payload.parameters || {}
+			);
+			return;
+		}
+
+		if ( type === 'tool_result' ) {
+			const payload = msg.payload || {};
+			appendToolResultTurn(
+				payload.tool_name || 'unknown',
+				payload.success !== false,
+				payload.result !== undefined ? payload.result : ( typeof msg.content === 'string' ? msg.content : payload )
+			);
+			return;
+		}
+
+		// Default: plain text turn (user / assistant / system).
+		const text = typeof msg.content === 'string' ? msg.content : JSON.stringify( msg.content );
+		appendTextTurn( role, text );
+	}
+
+	function renderTranscript( messages ) {
+		clearTranscript();
+		if ( ! Array.isArray( messages ) ) {
+			return;
+		}
+		for ( const m of messages ) {
+			renderMessage( m );
+		}
+		scrollToBottom();
+	}
+
+	async function loadTranscript() {
 		if ( ! sessionId ) {
 			return;
 		}
-		els.sessionId.textContent = sessionId;
 		try {
 			const session = await apiFetch( {
 				path: '/' + config.restNamespace + '/chat/' + encodeURIComponent( sessionId ),
 			} );
 			if ( session && Array.isArray( session.messages ) ) {
-				clearTranscript();
-				for ( const msg of session.messages ) {
-					const role = msg.role || 'unknown';
-					const content = typeof msg.content === 'string' ? msg.content : JSON.stringify( msg.content );
-					appendTurn( role, content );
-				}
+				renderTranscript( session.messages );
 			}
 		} catch ( err ) {
-			appendTurn( 'system', 'Could not load prior session — starting fresh. (' + err.message + ')' );
+			appendTextTurn( 'system', 'Could not load session: ' + err.message );
 			setSessionId( null );
 		}
 	}
@@ -96,8 +179,11 @@ function openclaWPInitChat() {
 			return;
 		}
 		const agent = els.agent.value;
-		appendTurn( 'user', message );
+		appendTextTurn( 'user', message );
+		appendTextTurn( 'system', '…thinking' );
+		const thinkingNode = els.transcript.lastChild;
 		els.input.value = '';
+		scrollToBottom();
 
 		try {
 			const data = { agent, message };
@@ -110,13 +196,17 @@ function openclaWPInitChat() {
 				data,
 			} );
 			setSessionId( result.session_id );
-			appendTurn( 'assistant', result.reply || '(no reply)' );
+			// Drop the optimistic "thinking" placeholder; reload the full transcript
+			// so tool_call / tool_result turns from the loop's mediation become visible.
+			thinkingNode && thinkingNode.remove();
+			await loadTranscript();
 		} catch ( err ) {
-			appendTurn( 'system', 'Chat failed: ' + err.message );
+			thinkingNode && thinkingNode.remove();
+			appendTextTurn( 'system', 'Chat failed: ' + err.message );
 		}
 	} );
 
-	rehydrateSession();
+	loadTranscript();
 }
 
 if ( document.readyState === 'loading' ) {

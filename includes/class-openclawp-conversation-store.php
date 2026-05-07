@@ -97,7 +97,9 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 				'post_status'  => 'publish',
 				'post_author'  => $user_id,
 				'post_title'   => '',
-				'post_content' => wp_json_encode( array() ),
+				// wp_insert_post unslashes post_content; wp_slash compensates so
+				// JSON-escaped characters survive the round-trip.
+				'post_content' => wp_slash( wp_json_encode( array() ) ),
 			),
 			true
 		);
@@ -144,7 +146,10 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 		$updated = wp_update_post(
 			array(
 				'ID'           => $post->ID,
-				'post_content' => wp_json_encode( array_values( $messages ) ),
+				// wp_update_post unslashes post_content; wp_slash preserves the
+				// JSON's escaped quotes (notably tool_result payloads that nest
+				// JSON in their content field).
+				'post_content' => wp_slash( wp_json_encode( array_values( $messages ) ) ),
 			),
 			true
 		);
@@ -256,7 +261,7 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 		$updated = wp_update_post(
 			array(
 				'ID'         => $post->ID,
-				'post_title' => $title,
+				'post_title' => wp_slash( $title ),
 			),
 			true
 		);

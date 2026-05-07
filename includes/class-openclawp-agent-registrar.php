@@ -22,6 +22,39 @@ final class OpenclaWP_Agent_Registrar {
 
 	public static function register(): void {
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_example_agent' ), 10 );
+		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_loop_demo_agent' ), 10 );
+	}
+
+	public static function maybe_register_loop_demo_agent(): void {
+		// Reuses the same opt-in filter as the get_time ability so they ship
+		// together — there's no point in registering one without the other.
+		if ( ! apply_filters( 'openclawp_register_loop_demo', false ) ) {
+			return;
+		}
+
+		wp_register_agent(
+			'openclawp-loop-demo',
+			array(
+				'label'          => __( 'openclaWP Loop Demo', 'openclawp' ),
+				'description'    => __(
+					'You are a precise assistant. You have access to one tool: openclawp__get-time, which returns the current time. When the user asks for the time, the current date, or anything time-related, you MUST call openclawp__get-time first and use its result in your reply. Never guess the time.',
+					'openclawp'
+				),
+				'owner_resolver' => static fn(): int => get_current_user_id(),
+				'default_config' => array(
+					'provider'  => 'auto',
+					'model'     => 'auto',
+					'tools'     => array( 'openclawp/get-time' ),
+					'max_turns' => 5,
+				),
+				'meta'           => array(
+					'source_plugin'  => 'openclawp/openclawp.php',
+					'source_type'    => 'loop-demo-agent',
+					'source_package' => 'lezama/openclawp',
+					'source_version' => OPENCLAWP_VERSION,
+				),
+			)
+		);
 	}
 
 	public static function maybe_register_example_agent(): void {

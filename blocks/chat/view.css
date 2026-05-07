@@ -49,6 +49,62 @@
 	font-style: italic;
 }
 
+.openclawp-turn-tool-call,
+.openclawp-turn-tool-result {
+	background: #f0eaff;
+	border-left: 3px solid #7b6bc4;
+	padding-left: 8px;
+}
+
+.openclawp-turn-tool-result {
+	background: #eaf6ff;
+	border-left-color: #2a7ad6;
+}
+
+.openclawp-turn-tool-error {
+	background: #ffe7e0 !important;
+	border-left-color: #d63232 !important;
+}
+
+.openclawp-turn-tool-summary {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 12px;
+	font-weight: 600;
+	color: #4a3f8a;
+}
+
+.openclawp-turn-tool-result .openclawp-turn-tool-summary {
+	color: #1f4f8d;
+}
+
+.openclawp-turn-tool-error .openclawp-turn-tool-summary {
+	color: #962020;
+}
+
+.openclawp-turn-tool-call details,
+.openclawp-turn-tool-result details {
+	margin-top: 6px;
+}
+
+.openclawp-turn-tool-call summary,
+.openclawp-turn-tool-result summary {
+	cursor: pointer;
+	font-size: 11px;
+	color: #555;
+	user-select: none;
+}
+
+.openclawp-turn-tool-call pre,
+.openclawp-turn-tool-result pre {
+	margin: 6px 0 0;
+	font-size: 11px;
+	background: rgba( 0, 0, 0, 0.05 );
+	padding: 6px;
+	border-radius: 3px;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
 .openclawp-turn-role {
 	font-weight: 600;
 	font-size: 11px;
