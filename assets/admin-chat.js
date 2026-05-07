@@ -107,14 +107,14 @@
 		els.input.value = '';
 
 		try {
+			const data = { agent, message };
+			if ( sessionId ) {
+				data.session_id = sessionId;
+			}
 			const result = await apiFetch( {
 				path: '/' + config.restNamespace + '/chat',
 				method: 'POST',
-				data: {
-					agent,
-					message,
-					session_id: sessionId,
-				},
+				data,
 			} );
 			setSessionId( result.session_id );
 			appendTurn( 'assistant', result.reply || '(no reply)' );

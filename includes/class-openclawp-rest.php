@@ -49,7 +49,7 @@ final class OpenclaWP_Rest {
 							'required' => true,
 						),
 						'session_id' => array(
-							'type'     => 'string',
+							'type'     => array( 'string', 'null' ),
 							'required' => false,
 						),
 					),
