@@ -158,7 +158,24 @@ When openclaWP is active, registered agents are immediately selectable in the ad
 
 For agent registration use the substrate's hook (`wp_agents_api_init`), not an openclaWP-specific one. See [Quickstart](#quickstart--register-your-own-agent).
 
-## REST routes
+## Surfaces
+
+The chat path is exposed two ways. They share an implementation; pick whichever fits the caller.
+
+### Abilities API (preferred for non-browser clients)
+
+```php
+$result = wp_get_ability( 'openclawp/chat' )->execute( array(
+    'agent'      => 'my-agent',
+    'message'    => 'Hello.',
+    'session_id' => null, // or a previously returned UUID for multi-turn
+) );
+// $result === [ 'session_id' => '…', 'reply' => '…', 'completed' => true ]
+```
+
+This is what MCP servers, Studio Code skills, WP-CLI helpers, and other agents in tool-calling chains should use. There's also `openclawp/echo` for smoke tests. Both abilities are filed under the `openclawp` ability category.
+
+### REST API (for browser-driven UIs)
 
 | Method | Path | Purpose |
 |---|---|---|
