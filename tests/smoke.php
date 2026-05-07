@@ -87,6 +87,58 @@ OpenclaWP_Smoke::check( 'release with right token returns true', true === $ok_re
 
 $store->delete_session( $session_id );
 
+// Resolver maps default_config to the shape using_model_preference accepts.
+add_action(
+	'wp_agents_api_init',
+	static function () {
+		wp_register_agent(
+			'openclawp-smoke-pin',
+			array(
+				'label'          => 'Smoke pin',
+				'description'    => 'Smoke test for model pinning.',
+				'default_config' => array(
+					'provider' => 'ollama',
+					'model'    => 'llama3.1:8b',
+				),
+			)
+		);
+		wp_register_agent(
+			'openclawp-smoke-auto',
+			array(
+				'label'          => 'Smoke auto',
+				'description'    => 'Smoke test for auto fallback.',
+				'default_config' => array( 'provider' => 'auto', 'model' => 'auto' ),
+			)
+		);
+	},
+	60
+);
+do_action( 'wp_agents_api_init' );
+
+$rc       = new ReflectionClass( 'OpenclaWP_Runner' );
+$resolver = $rc->getMethod( 'resolve_model_preference' );
+$resolver->setAccessible( true );
+
+$pin_agent  = wp_get_agent( 'openclawp-smoke-pin' );
+$auto_agent = wp_get_agent( 'openclawp-smoke-auto' );
+
+OpenclaWP_Smoke::check( 'pinned agent registered', null !== $pin_agent );
+OpenclaWP_Smoke::check( 'auto agent registered', null !== $auto_agent );
+
+if ( $pin_agent ) {
+	$pref = $resolver->invoke( null, $pin_agent );
+	OpenclaWP_Smoke::check(
+		'pinned config resolves to provider+model tuple',
+		array( 'ollama', 'llama3.1:8b' ) === $pref,
+		is_array( $pref ) ? json_encode( $pref ) : (string) $pref
+	);
+}
+
+if ( $auto_agent ) {
+	$pref = $resolver->invoke( null, $auto_agent );
+	OpenclaWP_Smoke::check( 'auto config resolves to null preference', null === $pref );
+}
+
 $failed = OpenclaWP_Smoke::summarize();
 if ( $failed > 0 ) {
 	exit( 1 );
