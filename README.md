@@ -136,8 +136,10 @@ The chat path is exposed three ways. Same shared implementation; pick whichever 
 | `POST` | `/openclawp/v1/chat`              | Send a message; body: `{ agent, message, session_id? }` |
 | `GET`  | `/openclawp/v1/chat/{session_id}` | Fetch the full transcript |
 | `POST` | `/openclawp/v1/wacli/webhook`     | HMAC-gated inbound from `wacli sync` (Path B) |
+| `GET`  | `/openclawp/v1/whatsapp/webhook`  | Meta verification challenge (WhatsApp Cloud API alternative to wacli) |
+| `POST` | `/openclawp/v1/whatsapp/webhook`  | HMAC-gated inbound from Meta's Graph API (WhatsApp Cloud API alternative to wacli) |
 
-Chat routes default to `manage_options`; gate via `openclawp_rest_permission_callback`. The wacli webhook is gated by HMAC signature only.
+Chat routes default to `manage_options`; gate via `openclawp_rest_permission_callback`. Both webhook endpoints are gated by HMAC signature only.
 
 ---
 
@@ -171,11 +173,26 @@ The legacy boolean `openclawp_wacli_allow_self_messages` (shipped briefly betwee
 
 ---
 
+## WhatsApp Cloud API (alternative to wacli)
+
+A second WhatsApp transport using **Meta's official [Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api)** is bundled too. Pick this instead of wacli when you have (or want) a real WhatsApp Business account, a verified phone number ID, and a permanent access token — the standard path for production-grade business deployments.
+
+Off by default. Opt in:
+
+```php
+add_filter( 'openclawp_register_whatsapp', '__return_true' );
+```
+
+Configure credentials at **wp-admin → openclaWP → WhatsApp** (Phone Number ID, App Secret, Permanent Access Token, Webhook Verify Token, default agent), then point Meta's webhook at `/openclawp/v1/whatsapp/webhook`. Inbound text is signature-verified (`X-Hub-Signature-256` HMAC against your App Secret), dispatched to the configured agent, and the reply is posted back via the Graph API. Sessions persist per phone number — your conversation history follows you across days.
+
+See [`docs/whatsapp-setup.md`](docs/whatsapp-setup.md) for the full Meta-side runbook (Developer app, system user token, webhook configuration, ngrok / cloudflared tunneling for localhost).
+
 ## Filters reference
 
 | Filter | What it changes |
 |---|---|
 | `openclawp_register_example_agent`        | Register the bundled `openclawp-example` agent. Default `false`. |
+| `openclawp_register_whatsapp`             | Register the WhatsApp Cloud API ingress (webhook + outbound + settings page). Default `false`. |
 | `openclawp_conversation_store`            | Swap the default CPT-backed store for another `WP_Agent_Conversation_Store` impl. |
 | `openclawp_turn_runner_factory`           | Replace the wp-ai-client turn runner with a custom one. |
 | `openclawp_rest_permission_callback`      | Override the default `manage_options` REST gate. |

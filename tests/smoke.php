@@ -139,6 +139,62 @@ if ( $auto_agent ) {
 	OpenclaWP_Smoke::check( 'auto config resolves to null preference', null === $pref );
 }
 
+// WhatsApp adapter unit-style checks (don't depend on a configured Meta app).
+if ( class_exists( 'OpenclaWP_Whatsapp' ) ) {
+	OpenclaWP_Smoke::check(
+		'verify_signature accepts a correctly signed body',
+		OpenclaWP_Whatsapp::verify_signature(
+			'{"object":"whatsapp_business_account"}',
+			'sha256=' . hash_hmac( 'sha256', '{"object":"whatsapp_business_account"}', 'test-secret' ),
+			'test-secret'
+		)
+	);
+
+	OpenclaWP_Smoke::check(
+		'verify_signature rejects a tampered body',
+		false === OpenclaWP_Whatsapp::verify_signature(
+			'{"object":"whatsapp_business_account","tampered":true}',
+			'sha256=' . hash_hmac( 'sha256', '{"object":"whatsapp_business_account"}', 'test-secret' ),
+			'test-secret'
+		)
+	);
+
+	OpenclaWP_Smoke::check(
+		'verify_signature rejects when secret is empty',
+		false === OpenclaWP_Whatsapp::verify_signature( '{}', 'sha256=anything', '' )
+	);
+
+	$payload = array(
+		'object' => 'whatsapp_business_account',
+		'entry'  => array(
+			array(
+				'id'      => '123',
+				'changes' => array(
+					array(
+						'field' => 'messages',
+						'value' => array(
+							'messages' => array(
+								array(
+									'from' => '15555550100',
+									'id'   => 'wamid.HBg=',
+									'type' => 'text',
+									'text' => array( 'body' => 'hola' ),
+								),
+								// status events / non-text messages should be skipped:
+								array( 'from' => '15555550100', 'type' => 'image', 'id' => 'wamid.IMG=' ),
+							),
+						),
+					),
+				),
+			),
+		),
+	);
+	$messages = OpenclaWP_Whatsapp::extract_messages( $payload );
+	OpenclaWP_Smoke::check( 'extract_messages pulls one text message', 1 === count( $messages ) );
+	OpenclaWP_Smoke::check( 'extracted phone is correct', '15555550100' === ( $messages[0]['phone'] ?? '' ) );
+	OpenclaWP_Smoke::check( 'extracted text is correct', 'hola' === ( $messages[0]['text'] ?? '' ) );
+}
+
 $failed = OpenclaWP_Smoke::summarize();
 if ( $failed > 0 ) {
 	exit( 1 );
