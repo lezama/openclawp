@@ -24,6 +24,7 @@ final class OpenclaWP_Bootstrap {
 
 		require_once OPENCLAWP_PATH . 'includes/class-openclawp-conversation-store.php';
 		require_once OPENCLAWP_PATH . 'includes/class-openclawp-agent-registrar.php';
+		require_once OPENCLAWP_PATH . 'includes/class-openclawp-message-adapter.php';
 		require_once OPENCLAWP_PATH . 'includes/class-openclawp-runner.php';
 		require_once OPENCLAWP_PATH . 'includes/class-openclawp-rest.php';
 		require_once OPENCLAWP_PATH . 'includes/class-openclawp-abilities.php';
