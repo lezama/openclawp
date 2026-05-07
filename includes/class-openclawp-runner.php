@@ -148,29 +148,24 @@ final class OpenclaWP_Runner {
 					'error'       => null,
 				);
 
+				$mediation_enabled = ! empty( $function_declarations );
+
 				if ( ! function_exists( 'wp_ai_client_prompt' ) ) {
 					$telemetry['error'] = 'wp_ai_client_prompt_unavailable';
 					self::emit_chat_telemetry( $telemetry );
 
-					return array(
-						'messages' => array_merge(
-							$messages,
-							array(
-								array(
-									'role'    => 'assistant',
-									'content' => '[wp_ai_client_prompt() unavailable. Configure a WP AI Client connector or override openclawp_turn_runner_factory.]',
-								),
-							)
-						),
-						'tool_execution_results' => array(),
-						'conversation_complete'  => true,
+					return self::make_turn_result(
+						$messages,
+						'[wp_ai_client_prompt() unavailable. Configure a WP AI Client connector or override openclawp_turn_runner_factory.]',
+						array(),
+						$mediation_enabled
 					);
 				}
 
 				$ai_messages = OpenclaWP_Message_Adapter::to_ai_client_messages( $messages );
 
 				$builder = wp_ai_client_prompt( $ai_messages );
-				if ( ! empty( $function_declarations ) ) {
+				if ( $mediation_enabled ) {
 					$builder = $builder->using_function_declarations( ...$function_declarations );
 				}
 
@@ -187,18 +182,11 @@ final class OpenclaWP_Runner {
 					$telemetry['error'] = (string) $generated->get_error_code();
 					self::emit_chat_telemetry( $telemetry );
 
-					return array(
-						'messages' => array_merge(
-							$messages,
-							array(
-								array(
-									'role'    => 'assistant',
-									'content' => '[provider error: ' . $generated->get_error_message() . ']',
-								),
-							)
-						),
-						'tool_execution_results' => array(),
-						'conversation_complete'  => true,
+					return self::make_turn_result(
+						$messages,
+						'[provider error: ' . $generated->get_error_message() . ']',
+						array(),
+						$mediation_enabled
 					);
 				}
 
@@ -212,35 +200,7 @@ final class OpenclaWP_Runner {
 
 				self::emit_chat_telemetry( $telemetry );
 
-				// When mediation is enabled (i.e. tools are declared), always return
-				// the mediation shape — even with an empty tool_calls array, which
-				// the loop reads as "natural completion" and stops. This unifies the
-				// turn-1 (tool call) and turn-N (final text) returns.
-				if ( ! empty( $function_declarations ) ) {
-					$out = array(
-						'messages'   => $messages,
-						'tool_calls' => $tool_calls,
-					);
-					if ( '' !== $assistant_txt ) {
-						$out['content'] = $assistant_txt;
-					}
-					return $out;
-				}
-
-				// No tool declarations → legacy path: append the assistant message ourselves.
-				return array(
-					'messages' => array_merge(
-						$messages,
-						array(
-							array(
-								'role'    => 'assistant',
-								'content' => $assistant_txt,
-							),
-						)
-					),
-					'tool_execution_results' => array(),
-					'conversation_complete'  => true,
-				);
+				return self::make_turn_result( $messages, $assistant_txt, $tool_calls, $mediation_enabled );
 			};
 		};
 
@@ -258,6 +218,50 @@ final class OpenclaWP_Runner {
 		$factory = apply_filters( 'openclawp_turn_runner_factory', $default_factory, $session );
 
 		return call_user_func( $factory, $agent );
+	}
+
+	/**
+	 * Build a turn-runner result that's correctly shaped for whichever loop
+	 * path the caller is using.
+	 *
+	 * - Mediation enabled (tool declarations present): return `messages` +
+	 *   `tool_calls` + optional `content`. The loop's mediation path appends
+	 *   the assistant message and (when tool_calls is empty) marks
+	 *   `conversation_complete = true`, breaking the loop after turn N.
+	 * - Mediation disabled: return the legacy shape with the assistant message
+	 *   already appended and `conversation_complete = true`.
+	 *
+	 * @param array<int,array<string,mixed>>     $messages          Current transcript.
+	 * @param string                             $assistant_text    Assistant text reply (may be empty).
+	 * @param array<int,array{name:string,parameters:array}> $tool_calls Tool calls (empty when none).
+	 * @param bool                               $mediation_enabled Whether the loop is in mediation mode.
+	 * @return array
+	 */
+	private static function make_turn_result( array $messages, string $assistant_text, array $tool_calls, bool $mediation_enabled ): array {
+		if ( $mediation_enabled ) {
+			$out = array(
+				'messages'   => $messages,
+				'tool_calls' => $tool_calls,
+			);
+			if ( '' !== $assistant_text ) {
+				$out['content'] = $assistant_text;
+			}
+			return $out;
+		}
+
+		return array(
+			'messages' => array_merge(
+				$messages,
+				array(
+					array(
+						'role'    => 'assistant',
+						'content' => $assistant_text,
+					),
+				)
+			),
+			'tool_execution_results' => array(),
+			'conversation_complete'  => true,
+		);
 	}
 
 	/**
