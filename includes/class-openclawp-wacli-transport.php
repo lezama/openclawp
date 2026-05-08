@@ -79,10 +79,11 @@ final class OpenclaWP_Wacli_Transport {
 		$reply_to = (string) ( $message['msg_id'] ?? $message['id'] ?? '' );
 
 		// HMAC is the auth gate for this surface — wacli has already proven it
-		// holds the shared secret, so allow the chat ability to run without
-		// requiring a logged-in admin. The filter scope is bounded to this
-		// request via the immediate add_filter / remove_filter dance.
+		// holds the shared secret, so allow the chat dispatcher and the
+		// underlying handler to run without requiring a logged-in admin.
+		// Filters are scoped to this request via the add/remove pair.
 		$grant = static fn() => true;
+		add_filter( 'agents_chat_permission', $grant );
 		add_filter( 'openclawp_chat_ability_permission', $grant );
 
 		try {
@@ -90,6 +91,7 @@ final class OpenclaWP_Wacli_Transport {
 			$result  = $channel->handle( $message );
 		} finally {
 			remove_filter( 'openclawp_chat_ability_permission', $grant );
+			remove_filter( 'agents_chat_permission', $grant );
 		}
 
 		if ( is_wp_error( $result ) ) {
