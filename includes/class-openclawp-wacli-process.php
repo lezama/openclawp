@@ -31,14 +31,29 @@ final class OpenclaWP_Wacli_Process {
 			return $configured;
 		}
 
-		$candidates = array(
+		$default_candidates = array(
 			trim( (string) shell_exec( 'command -v wacli 2>/dev/null' ) ),
 			'/opt/homebrew/bin/wacli',
 			'/usr/local/bin/wacli',
 			'/usr/bin/wacli',
 		);
 
+		/**
+		 * Filter the list of candidate paths checked when wacli's location
+		 * isn't pre-configured. Default covers Homebrew on Apple Silicon,
+		 * Homebrew on Intel/Linux, and FHS standard paths. Add /snap/bin,
+		 * /opt/wacli, /usr/local/sbin, etc. for non-standard installs.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param string[] $candidates Ordered list of paths to probe.
+		 *                             First executable match wins and is
+		 *                             persisted to openclawp_wacli_binary.
+		 */
+		$candidates = (array) apply_filters( 'openclawp_wacli_binary_candidates', $default_candidates );
+
 		foreach ( $candidates as $path ) {
+			$path = (string) $path;
 			if ( '' !== $path && self::is_executable( $path ) ) {
 				update_option( self::BINARY_OPTION, $path, false );
 				return $path;
@@ -160,7 +175,13 @@ final class OpenclaWP_Wacli_Process {
 			return false;
 		}
 		if ( function_exists( 'posix_kill' ) ) {
-			return @posix_kill( $pid, 0 );
+			// posix_kill emits an E_WARNING when $pid is gone. That's the
+			// path we're checking for, not an error condition — clear
+			// last_error first so callers' error state isn't polluted.
+			$prev_level = error_reporting( error_reporting() & ~E_WARNING );
+			$alive      = posix_kill( $pid, 0 );
+			error_reporting( $prev_level );
+			return (bool) $alive;
 		}
 		// Fallback: ps -p
 		$out = (string) shell_exec( sprintf( 'ps -p %d 2>/dev/null', $pid ) );

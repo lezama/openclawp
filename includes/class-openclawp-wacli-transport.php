@@ -22,10 +22,11 @@ defined( 'ABSPATH' ) || exit;
 
 final class OpenclaWP_Wacli_Transport {
 
-	private const REST_NAMESPACE = 'openclawp/v1';
-	private const SECRET_OPTION  = 'openclawp_wacli_secret';
-	private const AGENT_OPTION   = 'openclawp_wacli_agent';
-	private const BINARY_OPTION  = 'openclawp_wacli_binary';
+	public const REST_NAMESPACE = 'openclawp/v1';
+	public const SECRET_OPTION  = 'openclawp_wacli_secret';
+	public const AGENT_OPTION   = 'openclawp_wacli_agent';
+	public const BINARY_OPTION  = 'openclawp_wacli_binary';
+	public const ALLOWED_OPTION = 'openclawp_wacli_allowed_jids';
 
 	public static function register(): void {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_rest_routes' ) );
@@ -39,8 +40,14 @@ final class OpenclaWP_Wacli_Transport {
 			self::REST_NAMESPACE,
 			'/wacli/webhook',
 			array(
-				'methods'             => 'POST',
+				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( __CLASS__, 'handle_webhook' ),
+				// Authentication is performed in handle_webhook() via the
+				// X-Wacli-Signature HMAC. wacli signs each event with the
+				// shared secret stored in the openclawp_wacli_secret option;
+				// callers without a valid signature get rejected with 401
+				// before any processing happens. Never accept this route
+				// without `verify_signature()` succeeding.
 				'permission_callback' => '__return_true',
 			)
 		);
@@ -49,6 +56,7 @@ final class OpenclaWP_Wacli_Transport {
 	public static function handle_webhook( WP_REST_Request $request ) {
 		$secret = (string) get_option( self::SECRET_OPTION, '' );
 		if ( '' === $secret ) {
+			self::reject( 'transport_disabled', $request );
 			return new WP_REST_Response( array( 'error' => 'transport_disabled' ), 503 );
 		}
 
@@ -56,22 +64,37 @@ final class OpenclaWP_Wacli_Transport {
 		$body      = (string) $request->get_body();
 
 		if ( ! self::verify_signature( $body, $signature, $secret ) ) {
+			self::reject( 'bad_signature', $request );
 			return new WP_REST_Response( array( 'error' => 'bad_signature' ), 401 );
 		}
 
 		$payload = json_decode( $body, true );
 		if ( ! is_array( $payload ) ) {
+			self::reject( 'bad_payload', $request );
 			return new WP_REST_Response( array( 'error' => 'bad_payload' ), 400 );
 		}
 
 		$message = isset( $payload['message'] ) && is_array( $payload['message'] ) ? $payload['message'] : $payload;
 
+		/**
+		 * Fires after a wacli webhook passes HMAC verification and JSON parsing.
+		 * Use for observability — count inbound traffic, log metadata, etc. Do
+		 * not modify the message here; that's the channel's job.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param array $message The parsed webhook payload.
+		 */
+		do_action( 'openclawp_wacli_webhook_received', $message );
+
 		$agent_slug = (string) get_option( self::AGENT_OPTION, '' );
 		if ( '' === $agent_slug ) {
+			self::reject( 'agent_not_configured', $request );
 			return new WP_REST_Response( array( 'error' => 'agent_not_configured' ), 503 );
 		}
 
 		if ( ! class_exists( 'AgentsAPI\\AI\\Channels\\WP_Agent_Channel' ) ) {
+			self::reject( 'agents_api_missing', $request );
 			return new WP_REST_Response( array( 'error' => 'agents_api_missing' ), 503 );
 		}
 
@@ -97,11 +120,14 @@ final class OpenclaWP_Wacli_Transport {
 		if ( is_wp_error( $result ) ) {
 			$code = $result->get_error_code();
 			if ( \AgentsAPI\AI\Channels\WP_Agent_Channel::SILENT_SKIP_CODE === $code ) {
+				self::reject( $result->get_error_message(), $request );
 				return self::ack( $result->get_error_message() );
 			}
 			if ( 'empty_message' === $code ) {
+				self::reject( 'empty_message', $request );
 				return self::ack( 'empty_message' );
 			}
+			self::reject( $code, $request );
 			return new WP_REST_Response(
 				array(
 					'error'   => 'agent_error',
@@ -117,6 +143,31 @@ final class OpenclaWP_Wacli_Transport {
 
 	private static function ack( string $note ): WP_REST_Response {
 		return new WP_REST_Response( array( 'ok' => true, 'note' => $note ), 200 );
+	}
+
+	/**
+	 * Fire `openclawp_wacli_webhook_rejected` for any non-success exit from
+	 * the webhook handler. Lets ops/log subscribers count rejections by
+	 * reason without having to pattern-match HTTP responses.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string          $reason  One of: transport_disabled, bad_signature, bad_payload,
+	 *                                 agent_not_configured, agents_api_missing, empty_message,
+	 *                                 self_message, no_chat, chat_not_allowed, or any agent
+	 *                                 error code propagated from the channel.
+	 * @param WP_REST_Request $request The rejected request — useful for IP / UA logging.
+	 */
+	private static function reject( string $reason, WP_REST_Request $request ): void {
+		/**
+		 * Fires once per rejected wacli webhook delivery.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param string          $reason
+		 * @param WP_REST_Request $request
+		 */
+		do_action( 'openclawp_wacli_webhook_rejected', $reason, $request );
 	}
 
 	public static function verify_signature( string $body, string $header, string $secret ): bool {
