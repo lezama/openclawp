@@ -61,6 +61,10 @@ When two of those are real, the resolver gets implemented in one PR using this s
 
 ## Where this likely ends up
 
-Per the broader convergence story (`Automattic/agents-api` issue #78), this resolver is a candidate for **upstream** rather than living in openclaWP forever. Every consumer of agents-api that uses wp-ai-client will need the same precedence stack — Data Machine already has its own version of "which provider runs this turn" that conflates agent-with-user. Resolving the precedence as a `WP_Agent::get_preferred_provider()` helper on canonical (or in a small companion) means consumer plugins delete their copies.
+Per [maintainer direction on #78](https://github.com/Automattic/agents-api/issues/78#issuecomment-4403225762), canonical agents-api stays strictly at contracts / value objects / registries / dispatcher-loop primitives — concrete adapters live in consumers, not upstream. So the resolver, when implemented, lives **here in openclaWP** (or in another consumer that needs it).
+
+What can plausibly go upstream in the same vein as [#95](https://github.com/Automattic/agents-api/issues/95)/[#96](https://github.com/Automattic/agents-api/issues/96): a *contract* tweak — e.g. canonical exposing a typed `WP_Agent::get_preferred_provider()` accessor that reads from the existing `default_config` shape. That's a sharpening of the agent contract (one method, no implementation), which fits the boundary. The actual layered resolver (filter → option → config → fallthrough) stays consumer-side; canonical just standardizes the shape consumers expect.
+
+If/when this gets built, propose the canonical-side accessor as a follow-on issue first; ship the consumer-side resolver in openclaWP regardless.
 
 For now: keep the design recorded, ship nothing.
