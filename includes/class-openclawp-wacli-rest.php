@@ -63,9 +63,17 @@ final class OpenclaWP_Wacli_Rest {
 					'callback'            => array( __CLASS__, 'update_settings' ),
 					'permission_callback' => array( __CLASS__, 'can_manage' ),
 					'args'                => array(
-						'agent'        => array( 'type' => 'string' ),
-						'allowed_jids' => array( 'type' => 'string' ),
-						'binary'       => array( 'type' => 'string' ),
+						'agent'             => array( 'type' => 'string' ),
+						'allowed_jids'      => array( 'type' => 'string' ),
+						'binary'            => array( 'type' => 'string' ),
+						'self_message_mode' => array(
+							'type' => 'string',
+							'enum' => array(
+								OpenclaWP_Wacli_Channel::MODE_BLOCK,
+								OpenclaWP_Wacli_Channel::MODE_ALLOW,
+								OpenclaWP_Wacli_Channel::MODE_ONLY,
+							),
+						),
 					),
 				),
 			)
@@ -134,6 +142,11 @@ final class OpenclaWP_Wacli_Rest {
 			update_option( 'openclawp_wacli_binary', $binary, false );
 		}
 
+		if ( null !== $request->get_param( 'self_message_mode' ) ) {
+			$mode = (string) $request->get_param( 'self_message_mode' );
+			update_option( OpenclaWP_Wacli_Channel::MODE_OPTION, $mode, false );
+		}
+
 		return new WP_REST_Response( self::settings_snapshot(), 200 );
 	}
 
@@ -161,6 +174,10 @@ final class OpenclaWP_Wacli_Rest {
 			'binary'            => (string) get_option( 'openclawp_wacli_binary', '' ),
 			'binary_resolved'   => OpenclaWP_Wacli_Process::resolve_binary(),
 			'available_agents'  => self::available_agent_slugs(),
+			'self_message_mode' => OpenclaWP_Wacli_Channel::resolve_self_message_mode(
+				(string) get_option( OpenclaWP_Wacli_Channel::MODE_OPTION, '' ),
+				(bool) get_option( OpenclaWP_Wacli_Channel::LEGACY_ALLOW_OPTION, false )
+			),
 		);
 	}
 

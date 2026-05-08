@@ -147,6 +147,10 @@
 			} );
 			form.querySelector( '#openclawp-wacli-allowed' ).value = ( s.allowed_jids || '' ).split( ',' ).filter( Boolean ).join( '\n' );
 			form.querySelector( '#openclawp-wacli-binary' ).value = s.binary || '';
+			const modeSelect = form.querySelector( '#openclawp-wacli-self-mode' );
+			if ( modeSelect && s.self_message_mode ) {
+				modeSelect.value = s.self_message_mode;
+			}
 			openclaWPWacli.agent = s.agent;
 		} catch ( e ) {
 			console.error( '[openclawp-wacli] settings load failed', e );
@@ -170,6 +174,7 @@
 					agent: data.get( 'agent' ) || '',
 					allowed_jids: data.get( 'allowed_jids' ) || '',
 					binary: data.get( 'binary' ) || '',
+					self_message_mode: data.get( 'self_message_mode' ) || '',
 				},
 			} );
 			indicator.textContent = '✓ Saved';

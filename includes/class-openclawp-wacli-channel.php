@@ -17,6 +17,29 @@ use AgentsAPI\AI\Channels\WP_Agent_Channel;
 
 final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 
+	/**
+	 * Production-safe (default): self-messages from the linked account are
+	 * silent-skipped to prevent reply loops; everyone else's messages reach
+	 * the agent.
+	 */
+	public const MODE_BLOCK = 'block';
+
+	/**
+	 * Pass everything through, including from_me. Useful for solo testing
+	 * combined with the outbound msg_id dedupe.
+	 */
+	public const MODE_ALLOW = 'allow';
+
+	/**
+	 * Test-only: respond ONLY to messages the linked account itself sends
+	 * — every other inbound is silent-skipped. Use when pairing a personal
+	 * WhatsApp account so other contacts never trigger the agent.
+	 */
+	public const MODE_ONLY = 'only';
+
+	public const MODE_OPTION        = 'openclawp_wacli_self_message_mode';
+	public const LEGACY_ALLOW_OPTION = 'openclawp_wacli_allow_self_messages';
+
 	private string $chat_jid;
 	private string $reply_to_message_id;
 	private string $reply_to_sender_jid;
@@ -80,16 +103,26 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 		}
 
 		$is_self = ! empty( $data['from_me'] ) || ! empty( $data['fromMe'] ) || ! empty( $data['FromMe'] );
-		// Default: skip messages the linked account sent (loop prevention).
-		// Sites doing solo testing can flip the option to allow self-replies;
-		// the outbound msg_id dedupe above still prevents echo loops.
-		$default_skip = ! (bool) get_option( 'openclawp_wacli_allow_self_messages', false );
+		$mode    = self::resolve_self_message_mode(
+			(string) get_option( self::MODE_OPTION, '' ),
+			(bool) get_option( self::LEGACY_ALLOW_OPTION, false )
+		);
+
+		// `only` mode: ignore everyone except the linked account itself.
+		// Lets you pair your personal number for solo demos without the
+		// bot answering messages from family / coworkers / contacts.
+		if ( self::MODE_ONLY === $mode && ! $is_self ) {
+			return new \WP_Error( self::SILENT_SKIP_CODE, 'test_mode_self_only' );
+		}
+
+		// `block` mode (default): production-safe loop prevention.
+		$default_skip = ( self::MODE_BLOCK === $mode );
 		/**
 		 * Filter the loop-prevention skip on self-originated messages.
 		 *
-		 * Defaults to the value of `openclawp_wacli_allow_self_messages`
-		 * (inverted). Returning true silent-skips every from_me message;
-		 * false lets the agent reply to messages the linked account sent.
+		 * Defaults to true in `block` mode and false in `allow` / `only`.
+		 * Return true to silent-skip every from_me message; false to let
+		 * the agent reply to messages the linked account sent.
 		 *
 		 * @param bool  $skip True to silent-skip self-messages.
 		 * @param array $data Raw normalized webhook payload.
@@ -104,6 +137,23 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 			return new \WP_Error( self::SILENT_SKIP_CODE, 'chat_not_allowed' );
 		}
 		return null;
+	}
+
+	/**
+	 * Resolve the active self-message mode from the new enum option, with
+	 * fall-through to the legacy boolean shipped in #9. Pure function — the
+	 * runtime caller passes both option values so unit tests can drive it
+	 * directly without WP loaded.
+	 *
+	 * @param string $mode_option   Value of openclawp_wacli_self_message_mode.
+	 * @param bool   $legacy_allow  Value of openclawp_wacli_allow_self_messages (legacy).
+	 * @return self::MODE_*
+	 */
+	public static function resolve_self_message_mode( string $mode_option, bool $legacy_allow ): string {
+		if ( in_array( $mode_option, array( self::MODE_BLOCK, self::MODE_ALLOW, self::MODE_ONLY ), true ) ) {
+			return $mode_option;
+		}
+		return $legacy_allow ? self::MODE_ALLOW : self::MODE_BLOCK;
 	}
 
 	// ─── I/O ───────────────────────────────────────────────────────────
