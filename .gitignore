@@ -2,3 +2,7 @@
 /composer.lock
 .phpunit.result.cache
 .DS_Store
+
+/tools/wp-env/node_modules/
+/tools/wp-env/package-lock.json
+/tools/wp-env/wacli-data/
