@@ -19,11 +19,13 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 
 	private string $chat_jid;
 	private string $reply_to_message_id;
+	private string $reply_to_sender_jid;
 
-	public function __construct( string $agent_slug, string $chat_jid, string $reply_to_message_id = '' ) {
+	public function __construct( string $agent_slug, string $chat_jid, string $reply_to_message_id = '', string $reply_to_sender_jid = '' ) {
 		parent::__construct( $agent_slug );
 		$this->chat_jid            = $chat_jid;
 		$this->reply_to_message_id = $reply_to_message_id;
+		$this->reply_to_sender_jid = $reply_to_sender_jid;
 	}
 
 	// ─── Channel identity ──────────────────────────────────────────────
@@ -47,10 +49,52 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 		return '';
 	}
 
+	// ─── Conversation metadata for the canonical agents/chat dispatcher ─
+
+	protected function get_room_kind( array $data ): ?string {
+		unset( $data );
+		// JID suffix is the most reliable kind discriminator wacli emits.
+		// `@lid` is WhatsApp's opaque Linked-Id format and is used for both
+		// DM senders and (rarely) groups; we treat dash-bearing JIDs as
+		// groups regardless of suffix.
+		if ( str_contains( $this->chat_jid, '-' ) && str_ends_with( $this->chat_jid, '@g.us' ) ) {
+			return 'group';
+		}
+		if ( str_ends_with( $this->chat_jid, '@g.us' ) ) {
+			return 'group';
+		}
+		if ( str_ends_with( $this->chat_jid, '@newsletter' ) ) {
+			return 'channel';
+		}
+		return 'dm';
+	}
+
 	// ─── Lifecycle: silent loop-prevention and allowlist ──────────────
 
 	protected function validate( array $data ): ?\WP_Error {
-		if ( ! empty( $data['from_me'] ) || ! empty( $data['fromMe'] ) ) {
+		// Skip echoes of our own outbound replies (wacli reflects them back).
+		// Cheap, msg_id-based, never confused with genuine inbound traffic.
+		$msg_id = (string) ( $data['msg_id'] ?? $data['ID'] ?? '' );
+		if ( '' !== $msg_id && OpenclaWP_Wacli_Transport::is_recent_outbound( $msg_id ) ) {
+			return new \WP_Error( self::SILENT_SKIP_CODE, 'self_reply_echo' );
+		}
+
+		$is_self = ! empty( $data['from_me'] ) || ! empty( $data['fromMe'] ) || ! empty( $data['FromMe'] );
+		// Default: skip messages the linked account sent (loop prevention).
+		// Sites doing solo testing can flip the option to allow self-replies;
+		// the outbound msg_id dedupe above still prevents echo loops.
+		$default_skip = ! (bool) get_option( 'openclawp_wacli_allow_self_messages', false );
+		/**
+		 * Filter the loop-prevention skip on self-originated messages.
+		 *
+		 * Defaults to the value of `openclawp_wacli_allow_self_messages`
+		 * (inverted). Returning true silent-skips every from_me message;
+		 * false lets the agent reply to messages the linked account sent.
+		 *
+		 * @param bool  $skip True to silent-skip self-messages.
+		 * @param array $data Raw normalized webhook payload.
+		 */
+		if ( $is_self && (bool) apply_filters( 'openclawp_wacli_skip_self_messages', $default_skip, $data ) ) {
 			return new \WP_Error( self::SILENT_SKIP_CODE, 'self_message' );
 		}
 		if ( '' === $this->chat_jid ) {
@@ -76,7 +120,8 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 		$result = OpenclaWP_Wacli_Transport::send_via_wacli(
 			$this->chat_jid,
 			$text,
-			$this->reply_to_message_id
+			$this->reply_to_message_id,
+			$this->reply_to_sender_jid
 		);
 
 		if ( is_wp_error( $result ) ) {
