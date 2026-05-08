@@ -35,6 +35,7 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Wacli_Rest::register();
 		if ( is_admin() ) {
 			OpenclaWP_Admin::register();
+			OpenclaWP_Channels_Admin::register();
 			OpenclaWP_Wacli_Admin::register();
 		}
 	}
