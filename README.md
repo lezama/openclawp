@@ -46,6 +46,10 @@ Requires the Studio app and its [CLI](https://developer.wordpress.com/studio/cli
 #    or those questions get hand-wavy guesses. Bigger picks for better
 #    quality: gemma4:e4b (9.6 GB), gemma4:26b (18 GB). Sizing guide:
 #    docs/local-ollama.md.
+#
+#    Not sure what fits? `llmfit` (https://github.com/AlexsJones/llmfit)
+#    scans your CPU / RAM / GPU and scores ~150 models for fit + speed +
+#    quality across providers — a faster way to pick than trial-and-error.
 ollama serve >/dev/null 2>&1 &     # no-op if already running
 ollama pull gemma4:e2b
 
