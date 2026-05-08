@@ -30,6 +30,19 @@ final class OpenclaWP_Admin {
 			'dashicons-format-chat',
 			60
 		);
+
+		// Explicit "Chat" submenu mirrors the parent so the auto-added first
+		// item reads "Chat" instead of "openclaWP". Uses the same slug as the
+		// parent, so WordPress replaces the auto-added entry rather than
+		// adding a second one.
+		add_submenu_page(
+			self::PAGE_SLUG,
+			__( 'Chat', 'openclawp' ),
+			__( 'Chat', 'openclawp' ),
+			'manage_options',
+			self::PAGE_SLUG,
+			array( __CLASS__, 'render_chat_page' )
+		);
 	}
 
 	public static function render_chat_page(): void {
