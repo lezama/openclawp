@@ -38,6 +38,17 @@ if ( ! defined( 'AGENTS_API_LOADED' ) ) {
 	}
 }
 
+// Boot Action Scheduler before agents-api hooks try to schedule anything.
+// AS is a vendored composer dep; if a host site already has it (WooCommerce,
+// other AS-using plugin), the global function check inside the bridge sees
+// it and we no-op cleanly.
+if ( ! function_exists( 'as_schedule_recurring_action' ) ) {
+	$openclawp_action_scheduler = __DIR__ . '/vendor/woocommerce/action-scheduler/action-scheduler.php';
+	if ( file_exists( $openclawp_action_scheduler ) ) {
+		require_once $openclawp_action_scheduler;
+	}
+}
+
 require_once OPENCLAWP_PATH . 'includes/autoload.php';
 
 add_action( 'plugins_loaded', array( 'OpenclaWP_Bootstrap', 'init' ), 20 );
