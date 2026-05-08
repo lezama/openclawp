@@ -21,7 +21,8 @@ Built on top of [`Automattic/agents-api`](https://github.com/Automattic/agents-a
 | **Multi-turn sessions** | Each conversation is a CPT (`openclawp_session`); history follows the user across requests | ✅ |
 | **Tool use** | Agents can call read-only abilities — recent posts, comment counts, active plugins, `who-am-I` — bundled with the example agent | ✅ |
 | **Channels admin** | wp-admin Channels list view (`openclaWP → Channels`) for managing connectors per-site | ✅ |
-| **AI provider routing** | Anthropic, OpenAI, Gemini, Ollama (local) — picked per-agent via the standard WordPress AI client | ✅ |
+| **Local-first inference** | Default Quick Start runs against [Ollama](https://ollama.com/) on `localhost`. No API key, no external service. Swap in Anthropic / OpenAI / Gemini when you want. | ✅ |
+| **AI provider routing** | Per-agent provider + model selection via the standard WordPress AI client | ✅ |
 | **Connector: WhatsApp via wacli** | Pair as a WhatsApp linked device using [`openclaw/wacli`](https://github.com/openclaw/wacli)'s whatsmeow protocol | ⚠️ unofficial |
 | **Connector: WhatsApp Cloud API** | Meta's official Graph API, requires Business account + access token | ✅ alternative |
 | **More connectors (Telegram, Slack, Email, …)** | The base class is in agents-api; build them like the wacli channel | ➖ not started |
@@ -30,40 +31,62 @@ Built on top of [`Automattic/agents-api`](https://github.com/Automattic/agents-a
 
 ## Quick start
 
-The default path is the [Studio Mac app](https://developer.wordpress.com/studio/) — zero Docker, zero ports, just a local WordPress with the plugin active.
+The default path is the [Studio Mac app](https://developer.wordpress.com/studio/) for the WordPress side, and [Ollama](https://ollama.com/) for the model. Both run locally — no Docker, no API keys, no external service. Once you can talk to the agent in **wp-admin → openclaWP → Chat**, swap in a cloud provider or wire up a connector when the spike calls for it.
 
-If you're an LLM coding agent (Claude / Codex / …): each section below is a self-contained shell block. Pick the one that matches the user's environment and run it. No human-in-the-loop steps unless explicitly noted.
+If you're an LLM coding agent (Claude / Codex / …): each shell block below is self-contained. Pick the path that matches the user's environment and run it. No human-in-the-loop steps unless explicitly noted.
 
-### Path A — Studio (default)
+### Path A — Studio + local Ollama (default)
 
-Requires the Studio app and its [CLI](https://developer.wordpress.com/studio/cli/) (`studio` on PATH). Works on macOS.
+Requires the Studio app and its [CLI](https://developer.wordpress.com/studio/cli/) (`studio` on PATH), plus [Ollama](https://ollama.com/) running locally. macOS.
 
 ```bash
-# Create the site
+# 1. Local model — small enough to run on any modern Mac, supports tool use.
+#    Bigger picks: gemma3:12b, gemma4:26b, qwen2.5:7b. See docs/local-ollama.md
+#    for a sizing guide.
+ollama serve >/dev/null 2>&1 &     # no-op if already running
+ollama pull llama3.2:3b
+
+# 2. WordPress site
 studio site create \
 	--name openclawp-demo \
 	--wp latest --php 8.4 \
 	--skip-browser
 SITE_PATH="$HOME/Studio/openclawp-demo"
 
-# Drop in the plugin and its substrate
+# 3. Drop in the plugins (openclawp + agents-api substrate + Ollama provider)
 mkdir -p "$SITE_PATH/wp-content/plugins"
 cd "$SITE_PATH/wp-content/plugins"
 git clone https://github.com/Automattic/agents-api.git
 git clone https://github.com/lezama/openclawp.git
+git clone https://github.com/Fueled/ai-provider-for-ollama.git
 ( cd openclawp && composer install --no-dev )
+( cd ai-provider-for-ollama && composer install --no-dev )
 
-# Activate and configure a provider (Anthropic shown — swap for OpenAI / Gemini)
-studio --path "$SITE_PATH" wp plugin activate agents-api openclawp
+# 4. Activate + point WP at the local Ollama daemon
+studio --path "$SITE_PATH" wp plugin activate \
+	agents-api openclawp ai-provider-for-ollama
 studio --path "$SITE_PATH" wp option update \
-	connectors_ai_anthropic_api_key "$ANTHROPIC_API_KEY"
+	ai_provider_for_ollama_settings \
+	'{"host":"http://localhost:11434","model":"llama3.2:3b"}' \
+	--format=json
 ```
 
 Visit **wp-admin → openclaWP → Chat**. Talk to the bundled `openclawp-example` agent — ask it about your recent posts, your comment moderation queue, or your active plugins.
 
+> First reply takes 10–30s while Ollama loads the model into RAM; subsequent turns are interactive. Full Ollama runbook (sizing, troubleshooting, rollback): [`docs/local-ollama.md`](docs/local-ollama.md).
+
+#### Prefer a cloud provider?
+
+Skip step 1 and the Ollama clone in step 3. After step 4 (activating openclawp), drop in any `WordPress/ai-provider-for-*` plugin and configure its key via *Settings → Connectors* in wp-admin, or directly:
+
+```bash
+studio --path "$SITE_PATH" wp option update \
+	connectors_ai_anthropic_api_key "$ANTHROPIC_API_KEY"
+```
+
 ### Path B — an existing WordPress site
 
-If a site already exists (Pressable, a VPS, [Local](https://localwp.com/), your own Docker, …), drop the plugins in:
+If a site already exists (Pressable, a VPS, [Local](https://localwp.com/), your own Docker, …), drop the plugins in. Anthropic shown to keep the block short — the Ollama recipe in Path A applies verbatim, just call `wp` instead of `studio --path … wp`.
 
 ```bash
 # Inside any site's plugins directory:
@@ -140,6 +163,11 @@ git clone https://github.com/Automattic/agents-api.git
 git clone https://github.com/lezama/openclawp.git
 cd openclawp/tools/wp-env
 npm install && npm start
+
+# Provider — Anthropic shown for brevity. Ollama works too: clone
+# Fueled/ai-provider-for-ollama into the wp-env's plugins dir, activate
+# it, and set host to "http://host.docker.internal:11434" so the container
+# reaches the host's Ollama daemon.
 npx wp-env run cli wp option update \
 	connectors_ai_anthropic_api_key "$ANTHROPIC_API_KEY"
 
