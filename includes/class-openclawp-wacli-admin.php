@@ -4,10 +4,6 @@
  * provides the detail-view renderer for `wp-admin → openclaWP → Channels →
  * Configure`.
  *
- * No longer registers a top-level submenu of its own; that lives in
- * OpenclaWP_Channels_Admin which discovers channels via the
- * `openclawp_channels` filter.
- *
  * @package OpenclaWP
  */
 
@@ -44,19 +40,16 @@ final class OpenclaWP_Wacli_Admin {
 	 * Map the wacli process state machine to the Channels list status pill.
 	 */
 	private static function current_status(): string {
-		if ( ! class_exists( 'OpenclaWP_Wacli_Process' ) ) {
-			return 'not-configured';
-		}
 		$state = OpenclaWP_Wacli_Process::get_state();
 		switch ( $state['mode'] ?? '' ) {
 			case OpenclaWP_Wacli_Process::MODE_SYNCING:
-				return 'connected';
+				return OpenclaWP_Channels_Admin::STATUS_CONNECTED;
 			case OpenclaWP_Wacli_Process::MODE_PAIRING:
-				return 'pairing';
+				return OpenclaWP_Channels_Admin::STATUS_PAIRING;
 			case OpenclaWP_Wacli_Process::MODE_FAILED:
-				return 'failed';
+				return OpenclaWP_Channels_Admin::STATUS_FAILED;
 		}
-		return 'not-configured';
+		return OpenclaWP_Channels_Admin::STATUS_NOT_CONFIGURED;
 	}
 
 	/**
@@ -104,18 +97,13 @@ final class OpenclaWP_Wacli_Admin {
 	}
 
 	/**
-	 * Channel detail-view renderer. Receives the registered channel array.
+	 * Channel detail-view renderer. The dispatcher provides the page chrome
+	 * (`<h1>`, breadcrumb, subtitle); this renders the body.
 	 */
-	public static function render_detail( array $channel ): void {
-		unset( $channel );
+	public static function render_detail(): void {
 		$binary = OpenclaWP_Wacli_Process::resolve_binary();
 		?>
 		<div class="openclawp-wacli">
-			<h1><?php esc_html_e( 'WhatsApp', 'openclawp' ); ?></h1>
-			<p class="description">
-				<?php esc_html_e( 'Pair this site as a WhatsApp linked device. Incoming messages from allowed chats are forwarded to your selected agent through the agents/chat dispatcher.', 'openclawp' ); ?>
-			</p>
-
 			<?php if ( '' === $binary ) : ?>
 				<div class="notice notice-error">
 					<p><?php

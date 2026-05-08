@@ -16,7 +16,7 @@
  *             'name'            => 'WhatsApp',
  *             'subtitle'        => 'via openclaw/wacli',
  *             'description'     => '…',
- *             'status'          => 'connected', // or 'not-configured', 'failed'
+ *             'status'          => OpenclaWP_Channels_Admin::STATUS_CONNECTED,
  *             'detail_renderer' => array( OpenclaWP_Wacli_Admin::class, 'render_detail' ),
  *             'detail_assets'   => array( OpenclaWP_Wacli_Admin::class, 'enqueue_detail_assets' ),
  *         );
@@ -31,32 +31,25 @@ defined( 'ABSPATH' ) || exit;
 
 final class OpenclaWP_Channels_Admin {
 
-	public const PARENT_SLUG = 'openclawp';
-	public const PAGE_SLUG   = 'openclawp-channels';
+	public const PAGE_SLUG = 'openclawp-channels';
+
+	public const STATUS_CONNECTED      = 'connected';
+	public const STATUS_PAIRING        = 'pairing';
+	public const STATUS_FAILED         = 'failed';
+	public const STATUS_NOT_CONFIGURED = 'not-configured';
+	public const STATUS_UNKNOWN        = 'unknown';
+
+	/** @var array<int,array<string,mixed>>|null Per-request memoization. */
+	private static ?array $channels_cache = null;
 
 	public static function register(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_submenu' ), 15 );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
 	}
 
-	public static function enqueue_assets( $hook ): void {
-		if ( 'openclawp_page_' . self::PAGE_SLUG !== $hook ) {
-			return;
-		}
-		wp_enqueue_style(
-			'openclawp-channels-admin',
-			plugins_url( 'assets/channels-admin.css', OPENCLAWP_PLUGIN_FILE ),
-			array(),
-			OPENCLAWP_VERSION
-		);
-		// Detail-view assets defer to the active channel's `detail_assets`
-		// callback. List view loads only the channels stylesheet above.
-		self::maybe_enqueue_detail_assets( $hook );
-	}
-
 	public static function register_submenu(): void {
 		add_submenu_page(
-			self::PARENT_SLUG,
+			OpenclaWP_Admin::PAGE_SLUG,
 			__( 'Channels', 'openclawp' ),
 			__( 'Channels', 'openclawp' ),
 			'manage_options',
@@ -65,10 +58,22 @@ final class OpenclaWP_Channels_Admin {
 		);
 	}
 
-	/**
-	 * Single page renderer that branches: list view (default) or detail view
-	 * (when a `?channel=<id>` query arg matches a registered channel).
-	 */
+	public static function enqueue_assets( $hook ): void {
+		if ( self::hook_suffix() !== $hook ) {
+			return;
+		}
+		wp_enqueue_style(
+			'openclawp-channels-admin',
+			plugins_url( 'assets/channels-admin.css', OPENCLAWP_PLUGIN_FILE ),
+			array(),
+			OPENCLAWP_VERSION
+		);
+		$active = self::active_channel();
+		if ( null !== $active && is_callable( $active['detail_assets'] ) ) {
+			call_user_func( $active['detail_assets'] );
+		}
+	}
+
 	public static function render_page(): void {
 		$active = self::active_channel();
 		if ( null !== $active ) {
@@ -79,29 +84,17 @@ final class OpenclaWP_Channels_Admin {
 	}
 
 	/**
-	 * Defer asset enqueue to whichever channel is currently being viewed in
-	 * detail. List view doesn't enqueue anything channel-specific.
-	 */
-	public static function maybe_enqueue_detail_assets( $hook ): void {
-		if ( 'openclawp_page_' . self::PAGE_SLUG !== $hook ) {
-			return;
-		}
-		$active = self::active_channel();
-		if ( null === $active ) {
-			return;
-		}
-		if ( ! empty( $active['detail_assets'] ) && is_callable( $active['detail_assets'] ) ) {
-			call_user_func( $active['detail_assets'] );
-		}
-	}
-
-	/**
-	 * Get all channels registered via the `openclawp_channels` filter,
-	 * normalized to a predictable shape.
+	 * Get all channels registered via the `openclawp_channels` filter.
+	 * Memoized for the lifetime of the request — the filter is invoked
+	 * multiple times across the page render path.
 	 *
 	 * @return array<int,array<string,mixed>>
 	 */
 	public static function get_channels(): array {
+		if ( null !== self::$channels_cache ) {
+			return self::$channels_cache;
+		}
+
 		/**
 		 * Filter the list of channels exposed under wp-admin → openclaWP → Channels.
 		 *
@@ -121,24 +114,27 @@ final class OpenclaWP_Channels_Admin {
 			$out[] = wp_parse_args(
 				$channel,
 				array(
-					'id'              => '',
 					'name'            => '',
 					'subtitle'        => '',
 					'description'     => '',
-					'status'          => 'unknown',
-					'logo_url'        => '',
+					'status'          => self::STATUS_UNKNOWN,
 					'detail_renderer' => null,
 					'detail_assets'   => null,
 					'detail_url'      => '',
 				)
 			);
 		}
+
+		self::$channels_cache = $out;
 		return $out;
+	}
+
+	private static function hook_suffix(): string {
+		return 'openclawp_page_' . self::PAGE_SLUG;
 	}
 
 	/**
 	 * Resolve the currently-viewed channel from the `channel` query arg.
-	 * Returns the registered entry, or null if the arg is missing/invalid.
 	 *
 	 * @return array<string,mixed>|null
 	 */
@@ -180,14 +176,6 @@ final class OpenclaWP_Channels_Admin {
 	}
 
 	private static function render_card( array $channel ): void {
-		$detail_url = '' !== $channel['detail_url']
-			? $channel['detail_url']
-			: add_query_arg(
-				array( 'page' => self::PAGE_SLUG, 'channel' => $channel['id'] ),
-				admin_url( 'admin.php' )
-			);
-
-		$status_label = self::status_label( $channel['status'] );
 		?>
 		<div class="openclawp-channel-card card">
 			<header class="openclawp-channel-card__header">
@@ -198,19 +186,29 @@ final class OpenclaWP_Channels_Admin {
 					<?php endif; ?>
 				</h2>
 				<span class="openclawp-channel-card__status openclawp-status--<?php echo esc_attr( $channel['status'] ); ?>">
-					<?php echo esc_html( $status_label ); ?>
+					<?php echo esc_html( self::status_label( $channel['status'] ) ); ?>
 				</span>
 			</header>
 			<?php if ( '' !== $channel['description'] ) : ?>
 				<p class="openclawp-channel-card__description"><?php echo esc_html( $channel['description'] ); ?></p>
 			<?php endif; ?>
 			<p class="openclawp-channel-card__actions">
-				<a class="button button-primary" href="<?php echo esc_url( $detail_url ); ?>">
+				<a class="button button-primary" href="<?php echo esc_url( self::detail_url( $channel ) ); ?>">
 					<?php esc_html_e( 'Configure', 'openclawp' ); ?>
 				</a>
 			</p>
 		</div>
 		<?php
+	}
+
+	private static function detail_url( array $channel ): string {
+		if ( '' !== $channel['detail_url'] ) {
+			return $channel['detail_url'];
+		}
+		return add_query_arg(
+			array( 'page' => self::PAGE_SLUG, 'channel' => $channel['id'] ),
+			admin_url( 'admin.php' )
+		);
 	}
 
 	private static function render_detail( array $channel ): void {
@@ -220,9 +218,13 @@ final class OpenclaWP_Channels_Admin {
 			<p class="openclawp-channel-detail__back">
 				<a href="<?php echo esc_url( $back_url ); ?>">&larr; <?php esc_html_e( 'All channels', 'openclawp' ); ?></a>
 			</p>
+			<h1><?php echo esc_html( $channel['name'] ); ?></h1>
+			<?php if ( '' !== $channel['subtitle'] ) : ?>
+				<p class="description"><?php echo esc_html( $channel['subtitle'] ); ?></p>
+			<?php endif; ?>
 			<?php
 			if ( is_callable( $channel['detail_renderer'] ) ) {
-				call_user_func( $channel['detail_renderer'], $channel );
+				call_user_func( $channel['detail_renderer'] );
 			} else {
 				printf(
 					'<div class="notice notice-error"><p>%s</p></div>',
@@ -235,18 +237,12 @@ final class OpenclaWP_Channels_Admin {
 	}
 
 	private static function status_label( string $status ): string {
-		switch ( $status ) {
-			case 'connected':
-				return __( 'Connected', 'openclawp' );
-			case 'failed':
-				return __( 'Failed', 'openclawp' );
-			case 'pairing':
-				return __( 'Pairing', 'openclawp' );
-			case 'syncing':
-				return __( 'Syncing', 'openclawp' );
-			case 'not-configured':
-				return __( 'Not configured', 'openclawp' );
-		}
-		return __( 'Unknown', 'openclawp' );
+		$labels = array(
+			self::STATUS_CONNECTED      => __( 'Connected', 'openclawp' ),
+			self::STATUS_PAIRING        => __( 'Pairing', 'openclawp' ),
+			self::STATUS_FAILED         => __( 'Failed', 'openclawp' ),
+			self::STATUS_NOT_CONFIGURED => __( 'Not configured', 'openclawp' ),
+		);
+		return $labels[ $status ] ?? __( 'Unknown', 'openclawp' );
 	}
 }

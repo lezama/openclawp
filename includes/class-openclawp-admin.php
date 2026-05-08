@@ -14,7 +14,7 @@ defined( 'ABSPATH' ) || exit;
 
 final class OpenclaWP_Admin {
 
-	private const PAGE_SLUG = 'openclawp';
+	public const PAGE_SLUG = 'openclawp';
 
 	public static function register(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
@@ -31,10 +31,7 @@ final class OpenclaWP_Admin {
 			60
 		);
 
-		// Explicit "Chat" submenu mirrors the parent so the auto-added first
-		// item reads "Chat" instead of "openclaWP". Uses the same slug as the
-		// parent, so WordPress replaces the auto-added entry rather than
-		// adding a second one.
+		// Same slug as the parent so the auto-added first item reads "Chat".
 		add_submenu_page(
 			self::PAGE_SLUG,
 			__( 'Chat', 'openclawp' ),

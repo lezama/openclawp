@@ -56,8 +56,7 @@
 	color: #007017;
 }
 
-.openclawp-channel-card__status.openclawp-status--pairing,
-.openclawp-channel-card__status.openclawp-status--syncing {
+.openclawp-channel-card__status.openclawp-status--pairing {
 	background: #fcf9e8;
 	color: #826200;
 }
