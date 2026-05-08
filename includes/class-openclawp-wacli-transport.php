@@ -28,6 +28,16 @@ final class OpenclaWP_Wacli_Transport {
 	public const BINARY_OPTION  = 'openclawp_wacli_binary';
 	public const ALLOWED_OPTION = 'openclawp_wacli_allowed_jids';
 
+	/**
+	 * Transient that stores the message IDs of recent outbound replies, so
+	 * the inbound webhook can skip them and avoid a self-reply loop when
+	 * `openclawp_wacli_skip_self_messages` is filtered to false.
+	 *
+	 * Keyed by msg_id; values are timestamps for TTL trimming.
+	 */
+	private const OUTBOUND_TRANSIENT = 'openclawp_wacli_recent_outbound';
+	private const OUTBOUND_TTL       = 300; // 5 min
+
 	public static function register(): void {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_rest_routes' ) );
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
@@ -75,6 +85,7 @@ final class OpenclaWP_Wacli_Transport {
 		}
 
 		$message = isset( $payload['message'] ) && is_array( $payload['message'] ) ? $payload['message'] : $payload;
+		$message = self::normalize_message( $message );
 
 		/**
 		 * Fires after a wacli webhook passes HMAC verification and JSON parsing.
@@ -98,8 +109,9 @@ final class OpenclaWP_Wacli_Transport {
 			return new WP_REST_Response( array( 'error' => 'agents_api_missing' ), 503 );
 		}
 
-		$chat_jid = (string) ( $message['chat_jid'] ?? $message['chat_id'] ?? $message['chat'] ?? '' );
-		$reply_to = (string) ( $message['msg_id'] ?? $message['id'] ?? '' );
+		$chat_jid          = (string) ( $message['chat_jid'] ?? '' );
+		$reply_to          = (string) ( $message['msg_id'] ?? '' );
+		$reply_to_sender   = (string) ( $message['sender_jid'] ?? '' );
 
 		// HMAC is the auth gate for this surface — wacli has already proven it
 		// holds the shared secret, so allow the chat dispatcher and the
@@ -110,7 +122,7 @@ final class OpenclaWP_Wacli_Transport {
 		add_filter( 'openclawp_chat_ability_permission', $grant );
 
 		try {
-			$channel = new OpenclaWP_Wacli_Channel( $agent_slug, $chat_jid, $reply_to );
+			$channel = new OpenclaWP_Wacli_Channel( $agent_slug, $chat_jid, $reply_to, $reply_to_sender );
 			$result  = $channel->handle( $message );
 		} finally {
 			remove_filter( 'openclawp_chat_ability_permission', $grant );
@@ -170,6 +182,38 @@ final class OpenclaWP_Wacli_Transport {
 		do_action( 'openclawp_wacli_webhook_rejected', $reason, $request );
 	}
 
+	/**
+	 * Translate wacli's PascalCase payload (Chat, FromMe, Text, ID, SenderJID,
+	 * Timestamp, PushName, ReplyToID, …) into the snake_case shape the channel
+	 * and the agents-api dispatcher expect. Original keys are preserved so
+	 * downstream filters can still reach them when the conversion is lossy.
+	 */
+	public static function normalize_message( array $message ): array {
+		$map = array(
+			'Chat'           => 'chat_jid',
+			'ID'             => 'msg_id',
+			'SenderJID'      => 'sender_jid',
+			'Timestamp'      => 'timestamp',
+			'FromMe'         => 'from_me',
+			'Text'           => 'text',
+			'PushName'       => 'push_name',
+			'ReplyToID'      => 'reply_to_id',
+			'ReplyToDisplay' => 'reply_to_display',
+			'ReactionToID'   => 'reaction_to_id',
+			'ReactionEmoji'  => 'reaction_emoji',
+			'IsForwarded'    => 'is_forwarded',
+			'Media'          => 'media',
+		);
+
+		foreach ( $map as $pascal => $snake ) {
+			if ( array_key_exists( $pascal, $message ) && ! array_key_exists( $snake, $message ) ) {
+				$message[ $snake ] = $message[ $pascal ];
+			}
+		}
+
+		return $message;
+	}
+
 	public static function verify_signature( string $body, string $header, string $secret ): bool {
 		if ( '' === $header ) {
 			return false;
@@ -188,13 +232,20 @@ final class OpenclaWP_Wacli_Transport {
 	/**
 	 * Shell out to `wacli send text`. Returns true on success or WP_Error on failure.
 	 */
-	public static function send_via_wacli( string $jid, string $text, string $reply_to_id = '' ) {
+	public static function send_via_wacli( string $jid, string $text, string $reply_to_id = '', string $reply_to_sender_jid = '' ) {
 		$binary = (string) get_option( self::BINARY_OPTION, 'wacli' );
 
 		$cmd = array( $binary, 'send', 'text', '--json', '--to', $jid, '--message', $text );
 		if ( '' !== $reply_to_id ) {
 			$cmd[] = '--reply-to';
 			$cmd[] = $reply_to_id;
+			// Required for replying to messages wacli hasn't synced into its
+			// local store yet (common in busy groups). Cheap to always send
+			// when we have it, even for synced messages.
+			if ( '' !== $reply_to_sender_jid ) {
+				$cmd[] = '--reply-to-sender';
+				$cmd[] = $reply_to_sender_jid;
+			}
 		}
 
 		$escaped = implode( ' ', array_map( 'escapeshellarg', $cmd ) );
@@ -225,7 +276,53 @@ final class OpenclaWP_Wacli_Transport {
 			);
 		}
 
+		// Capture the outbound msg_id so the inbound webhook can de-duplicate
+		// the bot's own reply (wacli reflects every outbound message back as
+		// a webhook event with FromMe=true). Defensive across version drift —
+		// wacli's JSON shape has shifted in past releases.
+		$decoded = json_decode( (string) $stdout, true );
+		if ( is_array( $decoded ) ) {
+			$candidates = array(
+				$decoded['data']['id'] ?? null,
+				$decoded['data']['message_id'] ?? null,
+				$decoded['data']['ID'] ?? null,
+				$decoded['id'] ?? null,
+				$decoded['ID'] ?? null,
+			);
+			foreach ( $candidates as $id ) {
+				if ( is_string( $id ) && '' !== $id ) {
+					self::remember_outbound_id( $id );
+					break;
+				}
+			}
+		}
+
 		return true;
+	}
+
+	/**
+	 * Record a recently-sent message id so we can skip echoes from wacli's
+	 * webhook. Trims entries older than OUTBOUND_TTL on every write.
+	 */
+	public static function remember_outbound_id( string $msg_id ): void {
+		$now    = time();
+		$recent = (array) get_transient( self::OUTBOUND_TRANSIENT );
+		// Drop expired entries.
+		foreach ( $recent as $id => $ts ) {
+			if ( ! is_int( $ts ) || ( $now - $ts ) > self::OUTBOUND_TTL ) {
+				unset( $recent[ $id ] );
+			}
+		}
+		$recent[ $msg_id ] = $now;
+		set_transient( self::OUTBOUND_TRANSIENT, $recent, self::OUTBOUND_TTL );
+	}
+
+	public static function is_recent_outbound( string $msg_id ): bool {
+		if ( '' === $msg_id ) {
+			return false;
+		}
+		$recent = (array) get_transient( self::OUTBOUND_TRANSIENT );
+		return isset( $recent[ $msg_id ] );
 	}
 
 	/**
