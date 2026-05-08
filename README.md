@@ -197,6 +197,7 @@ Then `http://localhost:8888/wp-admin/admin.php?page=openclawp-channels&channel=w
 | `openclawp_wacli_binary` | Path to the `wacli` executable. | resolved from PATH / Homebrew |
 | `openclawp_wacli_allowed_jids` | Comma-separated JID allowlist. Empty = allow every chat. | `''` |
 | `openclawp_wacli_self_message_mode` | One of `block` / `allow` / `only`. Surfaced as a dropdown in the admin. | `block` |
+| `openclawp_wacli_workflow_id` | Route inbound WhatsApp messages to this workflow id instead of the configured agent. The workflow receives `text` / `chat_jid` / `sender_jid` / `push_name` / `room_kind` as inputs; its last step's `reply` / `message` / `text` / `value` field becomes the WhatsApp reply. Empty = chat-with-agent (default). | `''` |
 
 #### Self-message modes
 

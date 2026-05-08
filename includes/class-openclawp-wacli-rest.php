@@ -74,6 +74,7 @@ final class OpenclaWP_Wacli_Rest {
 								OpenclaWP_Wacli_Channel::MODE_ONLY,
 							),
 						),
+						'workflow_id'       => array( 'type' => 'string' ),
 					),
 				),
 			)
@@ -147,6 +148,11 @@ final class OpenclaWP_Wacli_Rest {
 			update_option( OpenclaWP_Wacli_Channel::MODE_OPTION, $mode, false );
 		}
 
+		if ( null !== $request->get_param( 'workflow_id' ) ) {
+			$workflow_id = trim( (string) $request->get_param( 'workflow_id' ) );
+			update_option( OpenclaWP_Wacli_Channel::WORKFLOW_OPTION, $workflow_id, false );
+		}
+
 		return new WP_REST_Response( self::settings_snapshot(), 200 );
 	}
 
@@ -169,16 +175,38 @@ final class OpenclaWP_Wacli_Rest {
 
 	private static function settings_snapshot(): array {
 		return array(
-			'agent'             => (string) get_option( 'openclawp_wacli_agent', '' ),
-			'allowed_jids'      => (string) get_option( OpenclaWP_Wacli_Transport::ALLOWED_OPTION, '' ),
-			'binary'            => (string) get_option( 'openclawp_wacli_binary', '' ),
-			'binary_resolved'   => OpenclaWP_Wacli_Process::resolve_binary(),
-			'available_agents'  => self::available_agent_slugs(),
-			'self_message_mode' => OpenclaWP_Wacli_Channel::resolve_self_message_mode(
+			'agent'              => (string) get_option( 'openclawp_wacli_agent', '' ),
+			'allowed_jids'       => (string) get_option( OpenclaWP_Wacli_Transport::ALLOWED_OPTION, '' ),
+			'binary'             => (string) get_option( 'openclawp_wacli_binary', '' ),
+			'binary_resolved'    => OpenclaWP_Wacli_Process::resolve_binary(),
+			'available_agents'   => self::available_agent_slugs(),
+			'self_message_mode'  => OpenclaWP_Wacli_Channel::resolve_self_message_mode(
 				(string) get_option( OpenclaWP_Wacli_Channel::MODE_OPTION, '' ),
 				(bool) get_option( OpenclaWP_Wacli_Channel::LEGACY_ALLOW_OPTION, false )
 			),
+			'workflow_id'        => (string) get_option( OpenclaWP_Wacli_Channel::WORKFLOW_OPTION, '' ),
+			'available_workflows' => self::available_workflow_ids(),
 		);
+	}
+
+	/**
+	 * @return string[] Sorted list of workflow ids the wacli admin can route to.
+	 */
+	private static function available_workflow_ids(): array {
+		$ids = array();
+		if ( class_exists( 'AgentsAPI\\AI\\Workflows\\WP_Agent_Workflow_Registry' ) ) {
+			foreach ( AgentsAPI\AI\Workflows\WP_Agent_Workflow_Registry::all() as $spec ) {
+				$ids[] = $spec->get_id();
+			}
+		}
+		if ( class_exists( 'OpenclaWP_Workflow_Store' ) ) {
+			foreach ( OpenclaWP_Workflow_Store::instance()->all() as $spec ) {
+				$ids[] = $spec->get_id();
+			}
+		}
+		$ids = array_values( array_unique( $ids ) );
+		sort( $ids );
+		return $ids;
 	}
 
 	/**

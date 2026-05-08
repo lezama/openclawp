@@ -151,6 +151,17 @@
 			if ( modeSelect && s.self_message_mode ) {
 				modeSelect.value = s.self_message_mode;
 			}
+			const wfSelect = form.querySelector( '#openclawp-wacli-workflow' );
+			if ( wfSelect ) {
+				wfSelect.innerHTML = '<option value="">— route to the configured agent (default) —</option>';
+				( s.available_workflows || [] ).forEach( function ( id ) {
+					const opt = document.createElement( 'option' );
+					opt.value = id;
+					opt.textContent = id;
+					if ( id === s.workflow_id ) opt.selected = true;
+					wfSelect.appendChild( opt );
+				} );
+			}
 			openclaWPWacli.agent = s.agent;
 		} catch ( e ) {
 			console.error( '[openclawp-wacli] settings load failed', e );
@@ -175,6 +186,7 @@
 					allowed_jids: data.get( 'allowed_jids' ) || '',
 					binary: data.get( 'binary' ) || '',
 					self_message_mode: data.get( 'self_message_mode' ) || '',
+					workflow_id: data.get( 'workflow_id' ) || '',
 				},
 			} );
 			indicator.textContent = '✓ Saved';

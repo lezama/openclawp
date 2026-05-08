@@ -40,6 +40,15 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 	public const MODE_OPTION        = 'openclawp_wacli_self_message_mode';
 	public const LEGACY_ALLOW_OPTION = 'openclawp_wacli_allow_self_messages';
 
+	/**
+	 * Option key for routing inbound wacli messages to a workflow id
+	 * instead of the configured agent. Empty string = route to agent
+	 * via agents/chat (legacy default).
+	 *
+	 * @since 0.3.0
+	 */
+	public const WORKFLOW_OPTION = 'openclawp_wacli_workflow_id';
+
 	private string $chat_jid;
 	private string $reply_to_message_id;
 	private string $reply_to_sender_jid;
@@ -191,6 +200,103 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 			return $mode_option;
 		}
 		return $legacy_allow ? self::MODE_ALLOW : self::MODE_BLOCK;
+	}
+
+	// ─── Optional workflow routing ─────────────────────────────────────
+
+	/**
+	 * Override the base `run_agent()` so an admin can swap chat-with-an-
+	 * agent for "kick off a workflow run" without having to fork the
+	 * channel. The workflow id is read from `openclawp_wacli_workflow_id`;
+	 * when empty, behaviour is identical to the parent (agents/chat).
+	 *
+	 * Inputs mapping is deliberately small and named — `text`, `chat_jid`,
+	 * `sender_jid`, `push_name`, `room_kind` — so workflow specs can rely
+	 * on a stable contract instead of poking at raw webhook fields.
+	 *
+	 * Output mapping: the workflow's last successful step output is
+	 * treated as the reply source. Conventions checked in order:
+	 *   - `output.last.reply` (string) — explicit
+	 *   - `output.last.message` / `text` / `value` — common shapes
+	 * Empty replies are silent-skipped (no send).
+	 *
+	 * @since 0.3.0
+	 *
+	 * @param string $message_text
+	 * @param array  $data
+	 * @return array|\WP_Error Chat-ability-shaped result.
+	 */
+	protected function run_agent( string $message_text, array $data ): array|\WP_Error {
+		$workflow_id = (string) get_option( self::WORKFLOW_OPTION, '' );
+		if ( '' === $workflow_id ) {
+			return parent::run_agent( $message_text, $data );
+		}
+
+		if ( ! function_exists( 'wp_get_ability' ) ) {
+			return new \WP_Error( 'abilities_api_missing', 'Abilities API is not loaded.' );
+		}
+
+		$ability = wp_get_ability( 'agents/run-workflow' );
+		if ( null === $ability ) {
+			return new \WP_Error(
+				'workflow_dispatcher_missing',
+				'agents/run-workflow ability is not registered. Ensure the agents-api workflow substrate (≥ 0.103.0) is installed, or clear the openclawp_wacli_workflow_id option to fall back to chat routing.'
+			);
+		}
+
+		$inputs = array(
+			'text'       => $message_text,
+			'chat_jid'   => $this->chat_jid,
+			'sender_jid' => (string) ( $data['sender_jid'] ?? $data['SenderJID'] ?? '' ),
+			'push_name'  => (string) ( $data['push_name'] ?? $data['PushName'] ?? '' ),
+			'room_kind'  => (string) ( $this->get_room_kind( $data ) ?? '' ),
+		);
+
+		$run = $ability->execute(
+			array(
+				'workflow_id' => $workflow_id,
+				'inputs'      => $inputs,
+			)
+		);
+
+		if ( is_wp_error( $run ) ) {
+			return $run;
+		}
+
+		// Translate workflow result → chat-shaped result so deliver_result()
+		// and the rest of the pipeline keep working unchanged.
+		$reply = self::extract_reply_from_run( $run );
+		return array(
+			'session_id' => (string) ( $run['run_id'] ?? '' ),
+			'reply'      => $reply,
+			'completed'  => 'succeeded' === ( $run['status'] ?? '' ),
+			'metadata'   => array(
+				'workflow_id' => $workflow_id,
+				'run_id'      => $run['run_id'] ?? '',
+				'status'      => $run['status'] ?? '',
+			),
+		);
+	}
+
+	/**
+	 * Pluck the user-visible reply string out of a workflow run result.
+	 * Public + static so unit tests can drive it without the full pipeline.
+	 *
+	 * @since 0.3.0
+	 *
+	 * @param array $run Canonical run result (from agents/run-workflow).
+	 * @return string Empty when no reply could be located.
+	 */
+	public static function extract_reply_from_run( array $run ): string {
+		$last = $run['output']['last'] ?? null;
+		if ( is_array( $last ) ) {
+			foreach ( array( 'reply', 'message', 'text', 'value' ) as $key ) {
+				if ( isset( $last[ $key ] ) && is_scalar( $last[ $key ] ) ) {
+					return (string) $last[ $key ];
+				}
+			}
+		}
+		return '';
 	}
 
 	// ─── I/O ───────────────────────────────────────────────────────────

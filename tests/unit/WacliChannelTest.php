@@ -150,4 +150,62 @@ final class WacliChannelTest extends TestCase {
 			OpenclaWP_Wacli_Channel::resolve_self_message_mode( 'block', true )
 		);
 	}
+
+	// ─── extract_reply_from_run ───────────────────────────────────────────
+
+	public function test_workflow_reply_prefers_explicit_reply_field(): void {
+		$run = array(
+			'output' => array(
+				'last' => array(
+					'reply'   => 'hello from the workflow',
+					'message' => 'should not win — reply takes precedence',
+				),
+			),
+		);
+		$this->assertSame( 'hello from the workflow', OpenclaWP_Wacli_Channel::extract_reply_from_run( $run ) );
+	}
+
+	public function test_workflow_reply_falls_back_to_message_then_text_then_value(): void {
+		$with_message = array( 'output' => array( 'last' => array( 'message' => 'msg-shape' ) ) );
+		$this->assertSame( 'msg-shape', OpenclaWP_Wacli_Channel::extract_reply_from_run( $with_message ) );
+
+		$with_text = array( 'output' => array( 'last' => array( 'text' => 'text-shape' ) ) );
+		$this->assertSame( 'text-shape', OpenclaWP_Wacli_Channel::extract_reply_from_run( $with_text ) );
+
+		$with_value = array( 'output' => array( 'last' => array( 'value' => 'value-shape' ) ) );
+		$this->assertSame( 'value-shape', OpenclaWP_Wacli_Channel::extract_reply_from_run( $with_value ) );
+	}
+
+	public function test_workflow_reply_empty_when_no_recognised_field(): void {
+		$run = array(
+			'output' => array(
+				'last' => array( 'thing' => 'unknown shape' ),
+			),
+		);
+		$this->assertSame( '', OpenclaWP_Wacli_Channel::extract_reply_from_run( $run ) );
+	}
+
+	public function test_workflow_reply_empty_when_no_last_step_succeeded(): void {
+		// Runner omits `last` when the final step failed (continue_on_error mode).
+		$run = array(
+			'output' => array(
+				'steps' => array( 'first' => array( 'value' => 'x' ) ),
+				// no `last` key
+			),
+		);
+		$this->assertSame( '', OpenclaWP_Wacli_Channel::extract_reply_from_run( $run ) );
+	}
+
+	public function test_workflow_reply_empty_when_run_is_skeletal(): void {
+		$this->assertSame( '', OpenclaWP_Wacli_Channel::extract_reply_from_run( array() ) );
+		$this->assertSame( '', OpenclaWP_Wacli_Channel::extract_reply_from_run( array( 'output' => array() ) ) );
+	}
+
+	public function test_workflow_reply_coerces_scalars_to_string(): void {
+		$run = array( 'output' => array( 'last' => array( 'value' => 42 ) ) );
+		$this->assertSame( '42', OpenclaWP_Wacli_Channel::extract_reply_from_run( $run ) );
+
+		$run = array( 'output' => array( 'last' => array( 'value' => true ) ) );
+		$this->assertSame( '1', OpenclaWP_Wacli_Channel::extract_reply_from_run( $run ) );
+	}
 }

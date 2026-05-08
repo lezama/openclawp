@@ -2,11 +2,11 @@
 /**
  * CPT-backed workflow run recorder.
  *
- * Implements `WP_Agent_Workflow_Run_Recorder` against an `openclawp_workflow_run`
+ * Implements `WP_Agent_Workflow_Run_Recorder` against an `openclawp_wf_run`
  * CPT — one post per run, status / step records / error / metadata stored in
  * post-meta. Runs are durable across the request that started them so the
- * upcoming admin UI can render a recent-runs list, retry a failed run, or
- * deep-link into the per-step trace.
+ * admin UI can render a recent-runs list, retry a failed run, or deep-link
+ * into the per-step trace.
  *
  * @package OpenclaWP
  */
@@ -18,7 +18,12 @@ use AgentsAPI\AI\Workflows\WP_Agent_Workflow_Run_Result;
 
 final class OpenclaWP_Workflow_Run_Recorder implements WP_Agent_Workflow_Run_Recorder {
 
-	public const POST_TYPE = 'openclawp_workflow_run';
+	/**
+	 * CPT slug. Capped at 16 characters because WordPress rejects post-type
+	 * names longer than 20 (`register_post_type` returns a silent WP_Error
+	 * for `openclawp_workflow_run` which is 22).
+	 */
+	public const POST_TYPE = 'openclawp_wf_run';
 
 	private const META_RUN_ID      = '_openclawp_run_id';
 	private const META_WORKFLOW_ID = '_openclawp_workflow_id';

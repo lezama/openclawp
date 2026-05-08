@@ -154,8 +154,8 @@ if ( class_exists( 'AgentsAPI\\AI\\Workflows\\WP_Agent_Workflow_Runner' ) ) {
 		null !== get_post_type_object( 'openclawp_workflow' )
 	);
 	OpenclaWP_Smoke::check(
-		'CPT openclawp_workflow_run registered',
-		null !== get_post_type_object( 'openclawp_workflow_run' )
+		'CPT openclawp_wf_run registered',
+		null !== get_post_type_object( 'openclawp_wf_run' )
 	);
 
 	add_filter( 'openclawp_register_example_workflow', '__return_true' );
@@ -183,28 +183,41 @@ if ( class_exists( 'AgentsAPI\\AI\\Workflows\\WP_Agent_Workflow_Runner' ) ) {
 
 	// run-workflow with an inline spec that uses ONLY the substrate's default
 	// ability handler — no agent / Anthropic / Ollama needed. Registers a
-	// throwaway ability that echoes its input.
-	add_action(
-		'wp_abilities_api_init',
-		static function () {
-			if ( ! function_exists( 'wp_register_ability' ) || wp_has_ability( 'tests/echo-input' ) ) {
-				return;
-			}
-			wp_register_ability(
-				'tests/echo-input',
-				array(
-					'label'               => 'Smoke echo',
-					'description'         => 'Returns its input under `echo` for the workflow smoke.',
-					'execute_callback'    => static function ( $input ) {
-						return array( 'echo' => $input );
-					},
-					'permission_callback' => '__return_true',
-				)
-			);
-		},
-		20
-	);
-	do_action( 'wp_abilities_api_init' );
+	// throwaway ability that echoes its input. wp_register_ability bails
+	// unless `doing_action('wp_abilities_api_init')` is true, so we hook
+	// the registration on the action and re-fire it.
+	if ( ! wp_has_ability( 'tests/echo-input' ) ) {
+		add_action(
+			'wp_abilities_api_init',
+			static function () {
+				if ( wp_has_ability( 'tests/echo-input' ) ) {
+					return;
+				}
+				wp_register_ability(
+					'tests/echo-input',
+					array(
+						'label'               => 'Smoke echo',
+						'description'         => 'Returns its input under `echo` for the workflow smoke.',
+						'category'            => 'agents-api',
+						'input_schema'        => array(
+							'type'                 => 'object',
+							'additionalProperties' => true,
+						),
+						'output_schema'       => array(
+							'type'                 => 'object',
+							'additionalProperties' => true,
+						),
+						'execute_callback'    => static function ( $input ) {
+							return array( 'echo' => $input );
+						},
+						'permission_callback' => '__return_true',
+					)
+				);
+			},
+			20
+		);
+		do_action( 'wp_abilities_api_init' );
+	}
 
 	$run = wp_get_ability( 'agents/run-workflow' )->execute(
 		array(
@@ -233,10 +246,10 @@ if ( class_exists( 'AgentsAPI\\AI\\Workflows\\WP_Agent_Workflow_Runner' ) ) {
 		isset( $run['output']['steps']['echo']['echo']['value'] ) && 'hola' === $run['output']['steps']['echo']['echo']['value']
 	);
 	OpenclaWP_Smoke::check(
-		'run row persisted in openclawp_workflow_run CPT',
+		'run row persisted in openclawp_wf_run CPT',
 		isset( $run['run_id'] ) && null !== get_posts(
 			array(
-				'post_type'      => 'openclawp_workflow_run',
+				'post_type'      => 'openclawp_wf_run',
 				'meta_key'       => '_openclawp_run_id',
 				'meta_value'     => $run['run_id'],
 				'posts_per_page' => 1,
