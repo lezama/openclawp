@@ -23,7 +23,7 @@ final class OpenclaWP_Wacli_Rest {
 			self::NAMESPACE,
 			'/wacli/state',
 			array(
-				'methods'             => 'GET',
+				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( __CLASS__, 'get_state' ),
 				'permission_callback' => array( __CLASS__, 'can_manage' ),
 			)
@@ -33,7 +33,7 @@ final class OpenclaWP_Wacli_Rest {
 			self::NAMESPACE,
 			'/wacli/connect',
 			array(
-				'methods'             => 'POST',
+				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( __CLASS__, 'connect' ),
 				'permission_callback' => array( __CLASS__, 'can_manage' ),
 			)
@@ -43,7 +43,7 @@ final class OpenclaWP_Wacli_Rest {
 			self::NAMESPACE,
 			'/wacli/disconnect',
 			array(
-				'methods'             => 'POST',
+				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( __CLASS__, 'disconnect' ),
 				'permission_callback' => array( __CLASS__, 'can_manage' ),
 			)
@@ -54,12 +54,12 @@ final class OpenclaWP_Wacli_Rest {
 			'/wacli/settings',
 			array(
 				array(
-					'methods'             => 'GET',
+					'methods'             => WP_REST_Server::READABLE,
 					'callback'            => array( __CLASS__, 'get_settings' ),
 					'permission_callback' => array( __CLASS__, 'can_manage' ),
 				),
 				array(
-					'methods'             => 'POST',
+					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( __CLASS__, 'update_settings' ),
 					'permission_callback' => array( __CLASS__, 'can_manage' ),
 					'args'                => array(
@@ -126,7 +126,7 @@ final class OpenclaWP_Wacli_Rest {
 
 		if ( null !== $request->get_param( 'allowed_jids' ) ) {
 			$normalized = self::normalize_allowed_jids( (string) $request->get_param( 'allowed_jids' ) );
-			update_option( 'openclawp_wacli_allowed_jids', $normalized, false );
+			update_option( OpenclaWP_Wacli_Transport::ALLOWED_OPTION, $normalized, false );
 		}
 
 		if ( null !== $request->get_param( 'binary' ) ) {
@@ -157,7 +157,7 @@ final class OpenclaWP_Wacli_Rest {
 	private static function settings_snapshot(): array {
 		return array(
 			'agent'             => (string) get_option( 'openclawp_wacli_agent', '' ),
-			'allowed_jids'      => (string) get_option( 'openclawp_wacli_allowed_jids', '' ),
+			'allowed_jids'      => (string) get_option( OpenclaWP_Wacli_Transport::ALLOWED_OPTION, '' ),
 			'binary'            => (string) get_option( 'openclawp_wacli_binary', '' ),
 			'binary_resolved'   => OpenclaWP_Wacli_Process::resolve_binary(),
 			'available_agents'  => self::available_agent_slugs(),

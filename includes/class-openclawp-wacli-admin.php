@@ -60,7 +60,7 @@ final class OpenclaWP_Wacli_Admin {
 				'nonce'         => wp_create_nonce( 'wp_rest' ),
 				'pollInterval'  => 2000,
 				'agent'         => (string) get_option( 'openclawp_wacli_agent', '' ),
-				'allowedJids'   => (string) get_option( 'openclawp_wacli_allowed_jids', '' ),
+				'allowedJids'   => (string) get_option( OpenclaWP_Wacli_Transport::ALLOWED_OPTION, '' ),
 			)
 		);
 

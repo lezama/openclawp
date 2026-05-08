@@ -95,7 +95,7 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 	// ─── Allowlist ─────────────────────────────────────────────────────
 
 	private function is_allowed( string $chat_jid ): bool {
-		$raw = (string) get_option( 'openclawp_wacli_allowed_jids', '' );
+		$raw = (string) get_option( OpenclaWP_Wacli_Transport::ALLOWED_OPTION, '' );
 		if ( '' === $raw ) {
 			return true; // empty allowlist = allow all
 		}
