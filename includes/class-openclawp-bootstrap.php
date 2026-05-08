@@ -31,6 +31,7 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Event_Sink::register();
 		OpenclaWP_Rest::register();
 		OpenclaWP_Canonical_Chat_Handler::register();
+		OpenclaWP_Workflow_Bootstrap::register();
 		OpenclaWP_Wacli_Transport::register();
 		OpenclaWP_Wacli_Rest::register();
 		if ( is_admin() ) {

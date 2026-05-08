@@ -21,6 +21,7 @@ Built on top of [`Automattic/agents-api`](https://github.com/Automattic/agents-a
 | **Multi-turn sessions** | Each conversation is a CPT (`openclawp_session`); history follows the user across requests | ✅ |
 | **Tool use** | Agents can call read-only abilities — recent posts, comment counts, active plugins, `who-am-I` — bundled with the example agent | ✅ |
 | **Channels admin** | wp-admin Channels list view (`openclaWP → Channels`) for managing connectors per-site | ✅ |
+| **Workflows** | Compose agents and abilities into deterministic recipes with `${inputs.x}` / `${steps.y.output.z}` bindings. CPT-backed Store + Run Recorder; runs hit `agents/run-workflow` (canonical dispatcher) and the openclaWP-shipped runtime persists every run for later inspection. Built on the [agents-api workflow substrate](https://github.com/Automattic/agents-api/pull/114). | ✅ runtime |
 | **Local-first inference** | Default Quick Start runs against [Ollama](https://ollama.com/) on `localhost`. No API key, no external service. Swap in Anthropic / OpenAI / Gemini when you want. | ✅ |
 | **AI provider routing** | Per-agent provider + model selection via the standard WordPress AI client | ✅ |
 | **Connector: WhatsApp via wacli** | Pair as a WhatsApp linked device using [`openclaw/wacli`](https://github.com/openclaw/wacli)'s whatsmeow protocol | ⚠️ unofficial |
@@ -138,6 +139,8 @@ The agent loop is the same regardless of surface; pick whichever fits the caller
 | `<!-- wp:openclawp/chat /-->` block | Embedding chat in a post / template / wp-admin screen |
 | `wp_get_ability( 'openclawp/chat' )->execute( … )` | MCP servers, Studio Code skills, WP-CLI, other plugins |
 | `wp_get_ability( 'agents/chat' )->execute( … )` | Same as above, but via the runtime-agnostic dispatcher (preferred for cross-consumer code) |
+| `wp_get_ability( 'agents/run-workflow' )->execute( … )` | Run a registered workflow (id) or an inline spec; openclaWP persists the run via the bundled CPT recorder |
+| `wp_get_ability( 'agents/validate-workflow' )->execute( … )` | Lint a workflow spec; pure substrate, no runtime touch |
 | `POST /openclawp/v1/chat` | Browser-driven UIs |
 | Channels (e.g., WhatsApp) | Reaching the agent from outside WordPress entirely |
 

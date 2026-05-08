@@ -139,6 +139,113 @@ if ( $auto_agent ) {
 	OpenclaWP_Smoke::check( 'auto config resolves to null preference', null === $pref );
 }
 
+// Workflow primitives — substrate dispatcher + openclaWP runtime adapter.
+if ( class_exists( 'AgentsAPI\\AI\\Workflows\\WP_Agent_Workflow_Runner' ) ) {
+	OpenclaWP_Smoke::check(
+		'agents/run-workflow ability registered',
+		wp_has_ability( 'agents/run-workflow' )
+	);
+	OpenclaWP_Smoke::check(
+		'agents/validate-workflow ability registered',
+		wp_has_ability( 'agents/validate-workflow' )
+	);
+	OpenclaWP_Smoke::check(
+		'CPT openclawp_workflow registered',
+		null !== get_post_type_object( 'openclawp_workflow' )
+	);
+	OpenclaWP_Smoke::check(
+		'CPT openclawp_workflow_run registered',
+		null !== get_post_type_object( 'openclawp_workflow_run' )
+	);
+
+	add_filter( 'openclawp_register_example_workflow', '__return_true' );
+	add_filter( 'openclawp_register_example_agent', '__return_true' );
+	do_action( 'wp_agents_api_init' );
+
+	OpenclaWP_Smoke::check(
+		'example workflow registers when opted in',
+		null !== wp_get_workflow( 'openclawp/site-summary' )
+	);
+
+	// validate-workflow is pure substrate — exercise it without a runner.
+	$validate = wp_get_ability( 'agents/validate-workflow' )->execute(
+		array(
+			'spec' => array(
+				'id'    => 'tests/no-id-on-step',
+				'steps' => array( array( 'type' => 'ability' ) ),
+			),
+		)
+	);
+	OpenclaWP_Smoke::check(
+		'validate-workflow returns errors for malformed spec',
+		isset( $validate['valid'] ) && false === $validate['valid'] && ! empty( $validate['errors'] )
+	);
+
+	// run-workflow with an inline spec that uses ONLY the substrate's default
+	// ability handler — no agent / Anthropic / Ollama needed. Registers a
+	// throwaway ability that echoes its input.
+	add_action(
+		'wp_abilities_api_init',
+		static function () {
+			if ( ! function_exists( 'wp_register_ability' ) || wp_has_ability( 'tests/echo-input' ) ) {
+				return;
+			}
+			wp_register_ability(
+				'tests/echo-input',
+				array(
+					'label'               => 'Smoke echo',
+					'description'         => 'Returns its input under `echo` for the workflow smoke.',
+					'execute_callback'    => static function ( $input ) {
+						return array( 'echo' => $input );
+					},
+					'permission_callback' => '__return_true',
+				)
+			);
+		},
+		20
+	);
+	do_action( 'wp_abilities_api_init' );
+
+	$run = wp_get_ability( 'agents/run-workflow' )->execute(
+		array(
+			'spec'   => array(
+				'id'    => 'tests/run-now',
+				'steps' => array(
+					array(
+						'id'      => 'echo',
+						'type'    => 'ability',
+						'ability' => 'tests/echo-input',
+						'args'    => array( 'value' => '${inputs.text}' ),
+					),
+				),
+			),
+			'inputs' => array( 'text' => 'hola' ),
+		)
+	);
+
+	OpenclaWP_Smoke::check(
+		'run-workflow inline spec succeeds',
+		is_array( $run ) && ( $run['status'] ?? '' ) === 'succeeded',
+		is_array( $run ) ? json_encode( $run['error'] ?? null ) : 'not-an-array'
+	);
+	OpenclaWP_Smoke::check(
+		'echo step output recorded',
+		isset( $run['output']['steps']['echo']['echo']['value'] ) && 'hola' === $run['output']['steps']['echo']['echo']['value']
+	);
+	OpenclaWP_Smoke::check(
+		'run row persisted in openclawp_workflow_run CPT',
+		isset( $run['run_id'] ) && null !== get_posts(
+			array(
+				'post_type'      => 'openclawp_workflow_run',
+				'meta_key'       => '_openclawp_run_id',
+				'meta_value'     => $run['run_id'],
+				'posts_per_page' => 1,
+				'fields'         => 'ids',
+			)
+		)[0] ?? null
+	);
+}
+
 // WhatsApp adapter unit-style checks (don't depend on a configured Meta app).
 if ( class_exists( 'OpenclaWP_Whatsapp' ) ) {
 	OpenclaWP_Smoke::check(
