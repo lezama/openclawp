@@ -40,11 +40,14 @@ If you're an LLM coding agent (Claude / Codex / …): each shell block below is 
 Requires the Studio app and its [CLI](https://developer.wordpress.com/studio/cli/) (`studio` on PATH), plus [Ollama](https://ollama.com/) running locally. macOS.
 
 ```bash
-# 1. Local model — small enough to run on any modern Mac, supports tool use.
-#    Bigger picks: gemma3:12b, gemma4:26b, qwen2.5:7b. See docs/local-ollama.md
-#    for a sizing guide.
+# 1. Local model. gemma4:e2b is the smallest Gemma with native function
+#    calling — the bundled openclawp-example agent calls tools to read
+#    posts / count comments / list plugins, so you need tool support
+#    or those questions get hand-wavy guesses. Bigger picks for better
+#    quality: gemma4:e4b (9.6 GB), gemma4:26b (18 GB). Sizing guide:
+#    docs/local-ollama.md.
 ollama serve >/dev/null 2>&1 &     # no-op if already running
-ollama pull llama3.2:3b
+ollama pull gemma4:e2b
 
 # 2. WordPress site
 studio site create \
@@ -67,11 +70,11 @@ studio --path "$SITE_PATH" wp plugin activate \
 	agents-api openclawp ai-provider-for-ollama
 studio --path "$SITE_PATH" wp option update \
 	ai_provider_for_ollama_settings \
-	'{"host":"http://localhost:11434","model":"llama3.2:3b"}' \
+	'{"host":"http://localhost:11434","model":"gemma4:e2b"}' \
 	--format=json
 ```
 
-Visit **wp-admin → openclaWP → Chat**. Talk to the bundled `openclawp-example` agent — ask it about your recent posts, your comment moderation queue, or your active plugins.
+Visit **wp-admin → openclaWP → Chat**. Try a tool-using prompt to confirm the wiring — *"what's my latest post?"* should make the agent call the `get-recent-posts` tool and quote the title back. *"who am I?"* exercises `get-current-user`. *"how many pending comments?"* exercises `count-comments`. If the answers are vague hand-waves, the model isn't actually invoking tools — bump up to `gemma4:e4b` or check that the Ollama provider is the active one (`wp eval 'print_r(WordPress\AiClient\AiClient::defaultRegistry()->getRegisteredProviderIds());'`).
 
 > First reply takes 10–30s while Ollama loads the model into RAM; subsequent turns are interactive. Full Ollama runbook (sizing, troubleshooting, rollback): [`docs/local-ollama.md`](docs/local-ollama.md).
 
