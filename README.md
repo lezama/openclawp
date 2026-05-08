@@ -67,9 +67,10 @@ npm start
 npx wp-env run cli wp option update \
 	connectors_ai_anthropic_api_key "$ANTHROPIC_API_KEY"
 
-# 4. (Optional) Test mode: respond ONLY to messages from your own paired
-#    number, ignore everyone else. Set this if you're pairing your personal
-#    account and don't want the agent answering family or coworkers.
+# 4. (Optional) Test mode: answer ONLY messages you send to yourself in
+#    your own "Message yourself" chat. Anything you type to family,
+#    coworkers, or groups is silent-skipped. Use this when pairing a
+#    personal account.
 npx wp-env run cli wp option update openclawp_wacli_self_message_mode only
 ```
 
@@ -159,11 +160,11 @@ Settings live at **wp-admin → openclaWP → Channels → WhatsApp**:
 
 The bot is paired as a *linked device* on a real WhatsApp account, so deciding whose messages should reach the agent matters:
 
-| Mode | Linked-account messages | Other contacts | When to use |
+| Mode | What reaches the agent | What gets silent-skipped | When to use |
 |---|---|---|---|
-| `block` (default) | silent-skipped | reach the agent | Production / shared bot account |
-| `allow`           | reach the agent | reach the agent | Dedicated bot account, no humans on it |
-| `only`            | reach the agent | silent-skipped | **Solo testing** — pair your own number to demo without the agent replying to your family / coworkers |
+| `block` (default) | every message from other contacts | every message you send | Production / shared bot account |
+| `allow` | every message, regardless of sender | nothing (only the outbound `msg_id` echo) | Dedicated bot account, no humans on it |
+| `only` | only messages you send in your own *Message yourself* chat (sender == recipient == you) | everything else — DMs to other contacts, group chats, messages from others | **Solo testing on a personal account** — the safest demo loop |
 
 The legacy boolean `openclawp_wacli_allow_self_messages` (shipped briefly between #9 and the test-mode rollout) maps to `allow` mode; the enum option is authoritative when both are set.
 

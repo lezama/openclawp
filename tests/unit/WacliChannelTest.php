@@ -61,6 +61,83 @@ final class WacliChannelTest extends TestCase {
 		);
 	}
 
+	// ─── extract_user_id / is_self_chat ───────────────────────────────────
+
+	public function test_extract_user_id_strips_device_suffix(): void {
+		$this->assertSame(
+			'269028278943744',
+			OpenclaWP_Wacli_Channel::extract_user_id( '269028278943744:83@lid' )
+		);
+	}
+
+	public function test_extract_user_id_strips_at_domain(): void {
+		$this->assertSame(
+			'269028278943744',
+			OpenclaWP_Wacli_Channel::extract_user_id( '269028278943744@lid' )
+		);
+	}
+
+	public function test_extract_user_id_keeps_group_compound_id(): void {
+		// Groups use `<creator>-<created_ts>@g.us` and that whole compound
+		// is the group's user id; we shouldn't split it.
+		$this->assertSame(
+			'5491155934137-1631880971',
+			OpenclaWP_Wacli_Channel::extract_user_id( '5491155934137-1631880971@g.us' )
+		);
+	}
+
+	public function test_is_self_chat_true_for_message_yourself(): void {
+		$this->assertTrue(
+			OpenclaWP_Wacli_Channel::is_self_chat(
+				array(
+					'chat_jid'   => '269028278943744@lid',
+					'sender_jid' => '269028278943744:83@lid',
+				)
+			)
+		);
+	}
+
+	public function test_is_self_chat_false_for_dm_with_other_contact(): void {
+		$this->assertFalse(
+			OpenclaWP_Wacli_Channel::is_self_chat(
+				array(
+					'chat_jid'   => '5491155555555@s.whatsapp.net',
+					'sender_jid' => '269028278943744:83@lid',
+				)
+			)
+		);
+	}
+
+	public function test_is_self_chat_false_for_group_chat_even_if_you_sent_it(): void {
+		$this->assertFalse(
+			OpenclaWP_Wacli_Channel::is_self_chat(
+				array(
+					'chat_jid'   => '5491155934137-1631880971@g.us',
+					'sender_jid' => '269028278943744:83@lid',
+				)
+			)
+		);
+	}
+
+	public function test_is_self_chat_false_when_jids_missing(): void {
+		$this->assertFalse( OpenclaWP_Wacli_Channel::is_self_chat( array() ) );
+		$this->assertFalse( OpenclaWP_Wacli_Channel::is_self_chat( array( 'chat_jid' => 'a@lid' ) ) );
+		$this->assertFalse( OpenclaWP_Wacli_Channel::is_self_chat( array( 'sender_jid' => 'a@lid' ) ) );
+	}
+
+	public function test_is_self_chat_reads_pascalcase_keys_too(): void {
+		$this->assertTrue(
+			OpenclaWP_Wacli_Channel::is_self_chat(
+				array(
+					'Chat'      => '269028278943744@lid',
+					'SenderJID' => '269028278943744:83@lid',
+				)
+			)
+		);
+	}
+
+	// ─── resolve_self_message_mode (continued) ────────────────────────────
+
 	public function test_explicit_enum_overrides_legacy_boolean(): void {
 		// Even if a stale `allow_self_messages=1` is on the books, the new
 		// enum value is authoritative. Avoids two opposing knobs disagreeing.
