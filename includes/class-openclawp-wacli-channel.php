@@ -108,10 +108,11 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 			(bool) get_option( self::LEGACY_ALLOW_OPTION, false )
 		);
 
-		// `only` mode: ignore everyone except the linked account itself.
-		// Lets you pair your personal number for solo demos without the
-		// bot answering messages from family / coworkers / contacts.
-		if ( self::MODE_ONLY === $mode && ! $is_self ) {
+		// `only` mode: respond to messages you send to yourself in the
+		// "Message yourself" chat AND nothing else. Typing in a family
+		// or coworker chat won't trigger the agent — only the chat where
+		// you're both author and recipient. This is the safe demo mode.
+		if ( self::MODE_ONLY === $mode && ! ( $is_self && self::is_self_chat( $data ) ) ) {
 			return new \WP_Error( self::SILENT_SKIP_CODE, 'test_mode_self_only' );
 		}
 
@@ -137,6 +138,36 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 			return new \WP_Error( self::SILENT_SKIP_CODE, 'chat_not_allowed' );
 		}
 		return null;
+	}
+
+	/**
+	 * True when chat and sender point to the same WhatsApp user id, i.e.
+	 * the "Message yourself" chat. wacli emits the device suffix on
+	 * SenderJID (`<user>:<device>@lid`) and a bare user id on the chat
+	 * key for self-DMs (`<user>@lid`); we strip the suffix and compare.
+	 *
+	 * Pure function so the test suite can drive it directly.
+	 *
+	 * @param array $data Normalized webhook payload (snake_case + raw).
+	 */
+	public static function is_self_chat( array $data ): bool {
+		$chat   = (string) ( $data['chat_jid'] ?? $data['Chat'] ?? '' );
+		$sender = (string) ( $data['sender_jid'] ?? $data['SenderJID'] ?? '' );
+		if ( '' === $chat || '' === $sender ) {
+			return false;
+		}
+		return self::extract_user_id( $chat ) === self::extract_user_id( $sender );
+	}
+
+	/**
+	 * Strip wacli's device suffix and the JID's @-domain to get the bare
+	 * user id token. `269028278943744:83@lid` → `269028278943744`,
+	 * `5491155934137-1631880971@g.us` → `5491155934137-1631880971`.
+	 */
+	public static function extract_user_id( string $jid ): string {
+		$sans_device = (string) preg_replace( '/^([^:@]+):\d+(@.*)$/', '$1$2', $jid );
+		$at_pos      = strpos( $sans_device, '@' );
+		return false === $at_pos ? $sans_device : substr( $sans_device, 0, $at_pos );
 	}
 
 	/**

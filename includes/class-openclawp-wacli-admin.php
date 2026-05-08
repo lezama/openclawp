@@ -169,12 +169,12 @@ final class OpenclaWP_Wacli_Admin {
 							<select name="self_message_mode" id="openclawp-wacli-self-mode">
 								<option value="<?php echo esc_attr( OpenclaWP_Wacli_Channel::MODE_BLOCK ); ?>"><?php esc_html_e( 'Block self-messages (production-safe, default)', 'openclawp' ); ?></option>
 								<option value="<?php echo esc_attr( OpenclaWP_Wacli_Channel::MODE_ALLOW ); ?>"><?php esc_html_e( 'Allow everyone, including yourself', 'openclawp' ); ?></option>
-								<option value="<?php echo esc_attr( OpenclaWP_Wacli_Channel::MODE_ONLY ); ?>"><?php esc_html_e( 'Test only — respond to your own messages, ignore others', 'openclawp' ); ?></option>
+								<option value="<?php echo esc_attr( OpenclaWP_Wacli_Channel::MODE_ONLY ); ?>"><?php esc_html_e( 'Test only — answer ONLY messages you send to your own "Message yourself" chat', 'openclawp' ); ?></option>
 							</select>
 							<p class="description"><?php
 								echo wp_kses(
-									__( '<strong>Block</strong> is the safe default. <strong>Test only</strong> pairs your personal account safely — the agent answers messages you send to yourself or to anyone, but ignores everything coming from other contacts. Switch to <strong>Allow</strong> only when the bot is meant to reply on a shared / dedicated account.', 'openclawp' ),
-									array( 'strong' => array() )
+									__( '<strong>Block</strong> is the safe default. <strong>Test only</strong> is the safe demo mode for personal accounts — the agent only replies to messages you send in your own <em>Message yourself</em> chat (sender = recipient = you). Anything you type to family / coworkers / groups is ignored. Switch to <strong>Allow</strong> only when the bot is meant to reply on a shared / dedicated account.', 'openclawp' ),
+									array( 'strong' => array(), 'em' => array() )
 								);
 							?></p>
 						</td>
