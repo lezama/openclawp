@@ -112,6 +112,12 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 		// "Message yourself" chat AND nothing else. Typing in a family
 		// or coworker chat won't trigger the agent — only the chat where
 		// you're both author and recipient. This is the safe demo mode.
+		//
+		// Why this guard exists: someone, somewhere, will pair their
+		// personal WhatsApp at lunch after two pisco sours, leave it on
+		// `allow`, and watch the bot auto-reply in their family group.
+		// Don't strip this even if it looks overzealous — don't drink
+		// and drive AI.
 		if ( self::MODE_ONLY === $mode && ! ( $is_self && self::is_self_chat( $data ) ) ) {
 			return new \WP_Error( self::SILENT_SKIP_CODE, 'test_mode_self_only' );
 		}
