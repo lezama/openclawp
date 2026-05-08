@@ -1,0 +1,333 @@
+<?php
+/**
+ * JSON-RPC bridge for `@automattic/agenttic-client`.
+ *
+ * Translates the agenttic protocol (JSON-RPC 2.0 over HTTP, A2A-shaped Task
+ * envelopes) into canonical `agents/chat` ability calls. The motivation is
+ * code reuse: the agenttic React hooks (`useAgentChat`, `useAgentSession`,
+ * etc.) are the right UI layer for openclaWP, and they speak this wire
+ * format — so we expose the canonical chat dispatcher under that wire
+ * format rather than reimplementing the React side against the openclaWP
+ * REST shape.
+ *
+ * Wire shape, abridged (full schema in @automattic/agenttic-client v0.1.x):
+ *
+ *   POST /openclawp/v1/agenttic/<agent-slug>
+ *   {
+ *     "jsonrpc": "2.0",
+ *     "id": "req-…",
+ *     "method": "message/send",
+ *     "params": {
+ *       "id": "task-…",
+ *       "sessionId": "…",            // optional
+ *       "message": {
+ *         "role": "user",
+ *         "parts": [ { "type": "text", "text": "hello" }, … ],
+ *         "messageId": "…",
+ *         "kind": "message"
+ *       }
+ *     }
+ *   }
+ *
+ *   Response (success):
+ *   {
+ *     "jsonrpc": "2.0",
+ *     "id": "req-…",
+ *     "result": {
+ *       "id": "task-…",
+ *       "sessionId": "…",
+ *       "status": {
+ *         "state": "completed",
+ *         "message": {
+ *           "role": "agent",
+ *           "parts": [ { "type": "text", "text": "<reply>" } ],
+ *           "messageId": "…",
+ *           "kind": "message"
+ *         },
+ *         "timestamp": "<iso>"
+ *       }
+ *     }
+ *   }
+ *
+ * v0 scope:
+ *   - `message/send` (returns the Task in a JSON envelope).
+ *   - `message/stream` (returns the same Task as a single SSE event).
+ *     The agenttic React hook (`useAgentChat`) hard-codes the stream
+ *     transport, so we accept it but don't actually stream — we run
+ *     `agents/chat` synchronously, then emit one `data: {…}\n\n` frame
+ *     with the completed Task and close the connection. Token-by-token
+ *     streaming and richer DataParts (tool-call, progress) land when
+ *     there's a concrete UI need.
+ *   - No `tasks/get`, no cancellation.
+ *   - Single text part in / single text part out.
+ *   - No artifacts. No tool-call surfacing in the response shape (tools
+ *     execute inside the loop and only the final assistant text is returned;
+ *     the React UI sees the same observability it gets today via
+ *     `agents_api_loop_event` if the consumer wants to wire it in).
+ *
+ * @package OpenclaWP
+ * @since 0.5.0
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+final class OpenclaWP_Agenttic_Bridge {
+
+	private const NAMESPACE = 'openclawp/v1';
+
+	private const PARSE_ERROR      = -32700;
+	private const INVALID_REQUEST  = -32600;
+	private const METHOD_NOT_FOUND = -32601;
+	private const INVALID_PARAMS   = -32602;
+	private const INTERNAL_ERROR   = -32603;
+
+	public static function register(): void {
+		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
+	}
+
+	public static function register_routes(): void {
+		register_rest_route(
+			self::NAMESPACE,
+			'/agenttic/(?P<agent>[A-Za-z0-9_\-]+)',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'handle' ),
+				'permission_callback' => array( __CLASS__, 'check_permission' ),
+				'args'                => array(
+					'agent' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_title',
+					),
+				),
+			)
+		);
+	}
+
+	public static function check_permission( WP_REST_Request $request ) {
+		$default = current_user_can( 'manage_options' );
+
+		/**
+		 * Filters whether the current user may call the openclaWP agenttic
+		 * bridge. Mirrors `openclawp_rest_permission_callback` so admins who
+		 * already loosen the chat REST surface get the agenttic surface for
+		 * free.
+		 *
+		 * @since 0.5.0
+		 *
+		 * @param bool            $allowed Default: manage_options.
+		 * @param WP_REST_Request $request Current request.
+		 */
+		$allowed = (bool) apply_filters( 'openclawp_agenttic_bridge_permission', $default, $request );
+
+		if ( ! $allowed ) {
+			// JSON-RPC errors require a 200 envelope, but auth pre-empts the
+			// JSON-RPC layer entirely — return a normal 401/403 here.
+			return new WP_Error(
+				'openclawp_forbidden',
+				__( 'You do not have permission to use openclaWP.', 'openclawp' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		return true;
+	}
+
+	public static function handle( WP_REST_Request $request ): WP_REST_Response {
+		$agent_slug = (string) $request->get_param( 'agent' );
+
+		$body = $request->get_json_params();
+		if ( ! is_array( $body ) ) {
+			return self::error_response( null, self::PARSE_ERROR, 'Invalid JSON-RPC envelope.' );
+		}
+
+		$rpc_id  = $body['id'] ?? null;
+		$method  = isset( $body['method'] ) ? (string) $body['method'] : '';
+		$params  = isset( $body['params'] ) && is_array( $body['params'] ) ? $body['params'] : array();
+		$jsonrpc = isset( $body['jsonrpc'] ) ? (string) $body['jsonrpc'] : '';
+
+		if ( '2.0' !== $jsonrpc ) {
+			return self::error_response( $rpc_id, self::INVALID_REQUEST, 'jsonrpc must be "2.0".' );
+		}
+
+		$is_streaming = ( 'message/stream' === $method );
+
+		if ( 'message/send' !== $method && ! $is_streaming ) {
+			// v0 scope: `message/send` and `message/stream`. tasks/get and
+			// tasks/cancel land when there's a concrete consumer.
+			return self::error_response( $rpc_id, self::METHOD_NOT_FOUND, sprintf( 'Method "%s" is not supported. v0 supports message/send and message/stream.', $method ) );
+		}
+
+		$message = isset( $params['message'] ) && is_array( $params['message'] ) ? $params['message'] : array();
+		$text    = self::extract_text( $message );
+		if ( '' === $text ) {
+			return self::error_response( $rpc_id, self::INVALID_PARAMS, 'message must contain at least one non-empty text part.' );
+		}
+
+		$session_id = isset( $params['sessionId'] ) && is_string( $params['sessionId'] ) ? $params['sessionId'] : null;
+		$task_id    = isset( $params['id'] ) && is_string( $params['id'] ) ? $params['id'] : self::generate_task_id();
+
+		if ( ! function_exists( 'wp_get_ability' ) ) {
+			return self::error_response( $rpc_id, self::INTERNAL_ERROR, 'Abilities API is not loaded.' );
+		}
+		$chat = wp_get_ability( 'agents/chat' );
+		if ( null === $chat ) {
+			return self::error_response( $rpc_id, self::INTERNAL_ERROR, 'agents/chat ability is not registered.' );
+		}
+
+		$result = $chat->execute(
+			array(
+				'agent'      => $agent_slug,
+				'message'    => $text,
+				'session_id' => $session_id,
+			)
+		);
+
+		if ( is_wp_error( $result ) ) {
+			if ( $is_streaming ) {
+				self::emit_sse_event(
+					array(
+						'jsonrpc' => '2.0',
+						'id'      => $rpc_id,
+						'error'   => array(
+							'code'    => self::INTERNAL_ERROR,
+							'message' => $result->get_error_message(),
+							'data'    => array( 'code' => $result->get_error_code() ),
+						),
+					)
+				);
+				exit;
+			}
+			return self::error_response( $rpc_id, self::INTERNAL_ERROR, $result->get_error_message(), array( 'code' => $result->get_error_code() ) );
+		}
+
+		$reply       = isset( $result['reply'] ) ? (string) $result['reply'] : '';
+		$session_out = isset( $result['session_id'] ) ? (string) $result['session_id'] : (string) $session_id;
+
+		$task = array(
+			'id'        => $task_id,
+			'sessionId' => $session_out,
+			'status'    => array(
+				'state'     => 'completed',
+				'message'   => array(
+					'role'      => 'agent',
+					'parts'     => array(
+						array(
+							'type' => 'text',
+							'text' => $reply,
+						),
+					),
+					'messageId' => self::generate_message_id(),
+					'kind'      => 'message',
+				),
+				'timestamp' => gmdate( 'c' ),
+			),
+		);
+
+		if ( $is_streaming ) {
+			// agenttic-client's `sendMessageStream` reads the body as SSE.
+			// We don't actually stream — we just package the completed
+			// Task into one event and close. That's enough for v0 since
+			// the canonical agents/chat call we proxied to is synchronous.
+			self::emit_sse_event(
+				array(
+					'jsonrpc' => '2.0',
+					'id'      => $rpc_id,
+					'result'  => $task,
+				)
+			);
+			exit;
+		}
+
+		return self::success_response( $rpc_id, $task );
+	}
+
+	/**
+	 * Write the SSE preamble + a single `data:` frame and flush. Caller
+	 * is expected to `exit` immediately after — emitting more output
+	 * after this would be parsed by the client as additional SSE events.
+	 *
+	 * @param array<string,mixed> $payload JSON-RPC envelope to emit.
+	 */
+	private static function emit_sse_event( array $payload ): void {
+		// Headers must precede any output. Disable WP's nocache scrubbing
+		// of arbitrary headers by setting them ourselves.
+		nocache_headers();
+		header( 'Content-Type: text/event-stream; charset=utf-8' );
+		header( 'Cache-Control: no-cache, no-store' );
+		header( 'X-Accel-Buffering: no' ); // Disables nginx response buffering for live streams.
+		// Disable PHP output buffering / Apache deflate for the rest of
+		// the request so the single SSE frame reaches the client now,
+		// not at request shutdown.
+		while ( ob_get_level() > 0 ) {
+			ob_end_flush();
+		}
+		echo 'data: ' . wp_json_encode( $payload ) . "\n\n";
+		flush();
+	}
+
+	/**
+	 * Pull the first non-empty `text` part out of an A2A Message.
+	 */
+	private static function extract_text( array $message ): string {
+		$parts = isset( $message['parts'] ) && is_array( $message['parts'] ) ? $message['parts'] : array();
+		foreach ( $parts as $part ) {
+			if ( ! is_array( $part ) ) {
+				continue;
+			}
+			if ( 'text' !== ( $part['type'] ?? '' ) ) {
+				continue;
+			}
+			$text = isset( $part['text'] ) ? trim( (string) $part['text'] ) : '';
+			if ( '' !== $text ) {
+				return $text;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Build a JSON-RPC success envelope. Always HTTP 200 — JSON-RPC carries
+	 * its own status semantics.
+	 */
+	private static function success_response( $rpc_id, array $result ): WP_REST_Response {
+		return new WP_REST_Response(
+			array(
+				'jsonrpc' => '2.0',
+				'id'      => $rpc_id,
+				'result'  => $result,
+			),
+			200
+		);
+	}
+
+	/**
+	 * Build a JSON-RPC error envelope. Always HTTP 200; the error rides
+	 * inside the `error` field per JSON-RPC 2.0.
+	 */
+	private static function error_response( $rpc_id, int $code, string $message, array $data = array() ): WP_REST_Response {
+		$err = array(
+			'code'    => $code,
+			'message' => $message,
+		);
+		if ( ! empty( $data ) ) {
+			$err['data'] = $data;
+		}
+		return new WP_REST_Response(
+			array(
+				'jsonrpc' => '2.0',
+				'id'      => $rpc_id,
+				'error'   => $err,
+			),
+			200
+		);
+	}
+
+	private static function generate_task_id(): string {
+		return 'task-' . wp_generate_password( 12, false, false );
+	}
+
+	private static function generate_message_id(): string {
+		return wp_generate_password( 12, false, false );
+	}
+}
