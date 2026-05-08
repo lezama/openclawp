@@ -179,6 +179,20 @@ final class OpenclaWP_Wacli_Admin {
 							?></p>
 						</td>
 					</tr>
+					<tr>
+						<th scope="row"><label for="openclawp-wacli-workflow"><?php esc_html_e( 'Route to workflow', 'openclawp' ); ?></label></th>
+						<td>
+							<select name="workflow_id" id="openclawp-wacli-workflow">
+								<option value=""><?php esc_html_e( '— route to the configured agent (default) —', 'openclawp' ); ?></option>
+							</select>
+							<p class="description"><?php
+								echo wp_kses(
+									__( 'Optional. When set, inbound WhatsApp messages bypass the chat agent and trigger this workflow instead. The workflow receives <code>text</code>, <code>chat_jid</code>, <code>sender_jid</code>, <code>push_name</code>, and <code>room_kind</code> as inputs; whatever its last step exposes as <code>reply</code> / <code>message</code> / <code>text</code> / <code>value</code> is sent back as the WhatsApp reply.', 'openclawp' ),
+									array( 'code' => array() )
+								);
+							?></p>
+						</td>
+					</tr>
 				</table>
 
 				<p class="submit">
