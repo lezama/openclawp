@@ -33,32 +33,41 @@ final class OpenclaWP_Workflow_Bootstrap {
 			OpenclaWP_Workflow_Admin::register();
 		}
 
+		// The bundled example workflow targets the site-introspection agent
+		// (it's the only registered agent with tools attached). Auto-pull
+		// the matching abilities + agent in when the workflow filter is on
+		// — otherwise the workflow runs but the agent has nothing to call.
+		if ( apply_filters( 'openclawp_register_example_workflow', false ) ) {
+			add_filter( 'openclawp_register_site_introspection', '__return_true' );
+		}
+
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_example_workflow' ) );
 	}
 
 	/**
 	 * Register the bundled example workflow when opted in.
 	 *
-	 * The workflow chains the example agent's tool-using replies into a
-	 * tiny end-to-end demonstration of the canonical workflow contract:
-	 * one agent step that asks the bundled `openclawp-example` agent for
-	 * a one-paragraph site summary, no second step, on-demand trigger
-	 * only. It exists so a maintainer can run
+	 * Targets `openclawp-site-introspection` (the agent that ships with
+	 * read-only tools wired up). One agent step, on-demand trigger,
+	 * returns a one-paragraph site status report. Useful as a smoke
+	 * target — running it kicks off agents/chat with real tool calls
+	 * and writes a row to the run recorder.
 	 *
 	 *     wp_get_ability( 'agents/run-workflow' )->execute(
 	 *         array( 'workflow_id' => 'openclawp/site-summary' )
 	 *     );
 	 *
-	 * and watch the full loop fire — agent dispatch, run recorder writing
-	 * a row, output flowing through bindings.
+	 * Enabling this filter also turns on
+	 * `openclawp_register_site_introspection` (see {@see register()}) so
+	 * the target agent + its tool abilities are present.
 	 */
 	public static function maybe_register_example_workflow(): void {
 		/**
 		 * Whether to register the bundled `openclawp/site-summary`
 		 * example workflow. Off by default — turn it on when you want
-		 * a working end-to-end smoke target. Pairs with
-		 * `openclawp_register_example_agent` since the workflow targets
-		 * that agent.
+		 * a working end-to-end smoke target. Auto-pulls the matching
+		 * site-introspection agent + abilities so the demo works
+		 * out of the box.
 		 *
 		 * @since 0.2.0
 		 *
@@ -86,8 +95,8 @@ final class OpenclaWP_Workflow_Bootstrap {
 					array(
 						'id'      => 'summarize',
 						'type'    => 'agent',
-						'agent'   => 'openclawp-example',
-						'message' => 'Give me a one-paragraph status update of this site${inputs.focus}. Use the read-only tools you have access to before answering.',
+						'agent'   => 'openclawp-site-introspection',
+						'message' => 'Give me a one-paragraph status update of this site${inputs.focus}. Use the read-only tools you have access to before answering — never guess.',
 					),
 				),
 				'triggers' => array(
