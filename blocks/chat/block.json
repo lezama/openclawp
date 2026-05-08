@@ -19,6 +19,6 @@
 		}
 	},
 	"render": "file:./render.php",
-	"viewScript": "file:./view.js",
-	"viewStyle": "file:./view.css"
+	"viewScript": "file:./build/view.js",
+	"viewStyle": "file:./build/view.css"
 }

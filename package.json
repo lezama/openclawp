@@ -1,0 +1,26 @@
+{
+	"name": "openclawp",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Build pipeline for openclaWP's chat block. The plugin itself is plain PHP — this only exists to bundle the React-driven chat surface that talks to the openclaWP agenttic JSON-RPC bridge.",
+	"scripts": {
+		"build": "wp-scripts build blocks/chat/src/view.js --output-path=blocks/chat/build",
+		"start": "wp-scripts start blocks/chat/src/view.js --output-path=blocks/chat/build",
+		"lint": "eslint blocks"
+	},
+	"dependencies": {
+		"@automattic/agenttic-client": "^0.1.63",
+		"@automattic/agenttic-ui": "^0.1.63",
+		"react": "^18.3.0",
+		"react-dom": "^18.3.0"
+	},
+	"devDependencies": {
+		"@wordpress/eslint-plugin": "^25.1.0",
+		"@wordpress/scripts": "^30.0.0",
+		"eslint": "^9.0.0"
+	},
+	"overrides": {
+		"@wordpress/eslint-plugin": "^25.1.0",
+		"eslint": "^9.0.0"
+	}
+}

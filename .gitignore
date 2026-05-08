@@ -6,3 +6,5 @@
 /tools/wp-env/node_modules/
 /tools/wp-env/package-lock.json
 /tools/wp-env/wacli-data/
+
+/node_modules/
