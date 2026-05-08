@@ -84,7 +84,7 @@
 		const id = root.dataset.workflowId;
 		try {
 			const [ spec, runs ] = await Promise.all( [
-				api( '/workflows/' + encodeURIComponent( id ) ),
+				api( '/workflow?id=' + encodeURIComponent( id ) ),
 				api( '/workflow-runs?workflow_id=' + encodeURIComponent( id ) + '&limit=10' ),
 			] );
 
@@ -169,7 +169,7 @@
 				} );
 				status.textContent = 'Running…';
 				try {
-					const res = await api( '/workflows/' + encodeURIComponent( workflowId ) + '/run', {
+					const res = await api( '/workflow/run?id=' + encodeURIComponent( workflowId ), {
 						method: 'POST',
 						data: { inputs: inputs },
 					} );
@@ -191,7 +191,7 @@
 				if ( ! detail ) return;
 				detail.innerHTML = '<p>Loading run…</p>';
 				try {
-					const run = await api( '/workflow-runs/' + encodeURIComponent( runId ) );
+					const run = await api( '/workflow-run?run_id=' + encodeURIComponent( runId ) );
 					detail.innerHTML = renderRunDetail( run );
 				} catch ( e ) {
 					detail.innerHTML = '<div class="notice notice-error inline"><p>' + escape( e.message || 'failed' ) + '</p></div>';
