@@ -38,6 +38,19 @@ final class OpenclaWP_Bootstrap {
 			OpenclaWP_Channels_Admin::register();
 			OpenclaWP_Wacli_Admin::register();
 		}
+
+		/**
+		 * Whether to register the WhatsApp Cloud API ingress (REST webhook +
+		 * outbound sender + settings page).
+		 *
+		 * Off by default. Opt in with `add_filter( 'openclawp_register_whatsapp', '__return_true' )`
+		 * and configure credentials at openclaWP → WhatsApp.
+		 *
+		 * @param bool $enabled Default false.
+		 */
+		if ( apply_filters( 'openclawp_register_whatsapp', false ) ) {
+			OpenclaWP_Whatsapp::register();
+		}
 	}
 
 	public static function register_blocks(): void {
