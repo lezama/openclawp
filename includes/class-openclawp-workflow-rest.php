@@ -108,6 +108,43 @@ final class OpenclaWP_Workflow_Rest {
 				),
 			)
 		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/workflow/draft',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'draft_workflow' ),
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+				'args'                => array(
+					'prompt' => array(
+						'type'        => 'string',
+						'required'    => true,
+						'description' => 'One-paragraph description of what the workflow should do.',
+					),
+					'agent'  => array(
+						'type'        => 'string',
+						'description' => 'Optional drafter agent slug. Defaults to the first registered agent.',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/workflow',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'save_workflow' ),
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+				'args'                => array(
+					'spec' => array(
+						'type'     => 'object',
+						'required' => true,
+					),
+				),
+			)
+		);
 	}
 
 	public static function can_manage(): bool {
@@ -242,6 +279,65 @@ final class OpenclaWP_Workflow_Rest {
 		}
 
 		return new WP_REST_Response( array( 'runs' => $out ), 200 );
+	}
+
+	/**
+	 * POST /workflow/draft — natural language → spec.
+	 */
+	public static function draft_workflow( WP_REST_Request $request ): WP_REST_Response {
+		$prompt = (string) $request->get_param( 'prompt' );
+		$agent  = (string) ( $request->get_param( 'agent' ) ?? '' );
+
+		$result = OpenclaWP_Workflow_Drafter::draft( $prompt, $agent );
+		if ( is_wp_error( $result ) ) {
+			return new WP_REST_Response(
+				array(
+					'error'   => $result->get_error_code(),
+					'message' => $result->get_error_message(),
+					'data'    => $result->get_error_data(),
+				),
+				400
+			);
+		}
+		return new WP_REST_Response( $result, 200 );
+	}
+
+	/**
+	 * POST /workflow — persist a spec to the CPT-backed store.
+	 */
+	public static function save_workflow( WP_REST_Request $request ): WP_REST_Response {
+		$raw = (array) $request->get_param( 'spec' );
+
+		$spec = WP_Agent_Workflow_Spec::from_array( $raw );
+		if ( is_wp_error( $spec ) ) {
+			return new WP_REST_Response(
+				array(
+					'error'   => $spec->get_error_code(),
+					'message' => $spec->get_error_message(),
+					'data'    => $spec->get_error_data(),
+				),
+				400
+			);
+		}
+
+		$saved = OpenclaWP_Workflow_Store::instance()->save( $spec );
+		if ( is_wp_error( $saved ) ) {
+			return new WP_REST_Response(
+				array(
+					'error'   => $saved->get_error_code(),
+					'message' => $saved->get_error_message(),
+				),
+				500
+			);
+		}
+
+		return new WP_REST_Response(
+			array(
+				'saved' => true,
+				'id'    => $spec->get_id(),
+			),
+			201
+		);
 	}
 
 	public static function get_run( WP_REST_Request $request ): WP_REST_Response {

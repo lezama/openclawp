@@ -220,10 +220,107 @@
 			'<pre>' + escape( JSON.stringify( run.output || {}, null, 2 ) ) + '</pre>';
 	}
 
+	// ─── Create-with-AI view ─────────────────────────────────────────
+
+	async function renderCreate() {
+		const root = document.getElementById( 'openclawp-workflow-create' );
+		if ( ! root ) return;
+
+		root.innerHTML =
+			'<section class="card">' +
+				'<h2>Describe what you want the workflow to do</h2>' +
+				'<p class="description">' +
+					'One paragraph in plain English. Mention <em>when</em> it should fire (a WordPress action like <code>comment_post</code>, a schedule, or on-demand) and <em>what</em> it should do (which abilities or agents to involve). The drafter knows your registered abilities and agents and will pick real slugs.' +
+				'</p>' +
+				'<textarea id="openclawp-create-prompt" class="large-text" rows="6" placeholder="e.g. Every time a new comment is posted, classify it as spam or ham and write the verdict to the workflow log."></textarea>' +
+				'<p class="submit">' +
+					'<button type="button" class="button button-primary" id="openclawp-draft-btn">Draft with AI</button>' +
+					'<span id="openclawp-draft-status" class="openclawp-workflow-run-status" aria-live="polite"></span>' +
+				'</p>' +
+			'</section>' +
+			'<div id="openclawp-draft-result"></div>';
+
+		document.getElementById( 'openclawp-draft-btn' ).addEventListener( 'click', onDraftClick );
+	}
+
+	async function onDraftClick() {
+		const promptEl = document.getElementById( 'openclawp-create-prompt' );
+		const status   = document.getElementById( 'openclawp-draft-status' );
+		const result   = document.getElementById( 'openclawp-draft-result' );
+		const btn      = document.getElementById( 'openclawp-draft-btn' );
+
+		const prompt = ( promptEl.value || '' ).trim();
+		if ( ! prompt ) {
+			status.textContent = '✗ Empty prompt.';
+			return;
+		}
+
+		btn.disabled = true;
+		status.textContent = 'Drafting… (~5–15s)';
+		result.innerHTML = '';
+
+		try {
+			const draft = await api( '/workflow/draft', {
+				method: 'POST',
+				data: { prompt: prompt },
+			} );
+			status.textContent = '✓ Drafted.';
+			result.innerHTML = renderDraftResult( draft );
+			wireSaveButton( draft.spec );
+		} catch ( e ) {
+			let msg = e.message || 'Draft failed';
+			if ( e.data && e.data.errors ) {
+				msg += ' — ' + e.data.errors.map( function ( er ) { return er.message; } ).join( '; ' );
+			}
+			status.textContent = '✗ ' + msg;
+		} finally {
+			btn.disabled = false;
+		}
+	}
+
+	function renderDraftResult( draft ) {
+		return '<section class="card">' +
+				'<h2>Drafted spec</h2>' +
+				( draft.explanation
+					? '<p>' + escape( draft.explanation ) + '</p>'
+					: '' ) +
+				'<pre class="openclawp-spec-pre">' + escape( JSON.stringify( draft.spec, null, 2 ) ) + '</pre>' +
+				'<p class="submit">' +
+					'<button type="button" class="button button-primary" id="openclawp-save-btn">Save & enable</button>' +
+					'<span id="openclawp-save-status" class="openclawp-workflow-run-status" aria-live="polite"></span>' +
+				'</p>' +
+			'</section>';
+	}
+
+	function wireSaveButton( spec ) {
+		const btn    = document.getElementById( 'openclawp-save-btn' );
+		const status = document.getElementById( 'openclawp-save-status' );
+		if ( ! btn ) return;
+		btn.addEventListener( 'click', async function () {
+			btn.disabled = true;
+			status.textContent = 'Saving…';
+			try {
+				const res = await api( '/workflow', {
+					method: 'POST',
+					data: { spec: spec },
+				} );
+				status.textContent = '✓ Saved as ' + res.id + ' — opening detail…';
+				setTimeout( function () {
+					window.location.href = openclaWPWorkflows.listUrl + '&workflow=' + encodeURIComponent( res.id );
+				}, 600 );
+			} catch ( e ) {
+				status.textContent = '✗ ' + ( e.message || 'Save failed' );
+				btn.disabled = false;
+			}
+		} );
+	}
+
 	// ─── Boot ──────────────────────────────────────────────────────────
 
 	function start() {
-		if ( openclaWPWorkflows.activeId ) {
+		if ( 'new' === openclaWPWorkflows.action ) {
+			renderCreate();
+		} else if ( openclaWPWorkflows.activeId ) {
 			renderDetail();
 		} else {
 			renderList();

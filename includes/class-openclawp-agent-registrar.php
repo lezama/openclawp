@@ -18,12 +18,14 @@ defined( 'ABSPATH' ) || exit;
 
 final class OpenclaWP_Agent_Registrar {
 
-	public const EXAMPLE_AGENT_SLUG = 'openclawp-example';
+	public const EXAMPLE_AGENT_SLUG  = 'openclawp-example';
+	public const DRAFTER_AGENT_SLUG  = 'openclawp-workflow-drafter';
 
 	public static function register(): void {
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_example_agent' ), 10 );
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_loop_demo_agent' ), 10 );
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_site_introspection_agent' ), 10 );
+		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_workflow_drafter_agent' ), 10 );
 	}
 
 	public static function maybe_register_site_introspection_agent(): void {
@@ -126,5 +128,116 @@ final class OpenclaWP_Agent_Registrar {
 				),
 			)
 		);
+	}
+
+	/**
+	 * Workflow drafter agent. Translates a user's natural-language
+	 * description into a valid workflow spec for the agents-api Workflows
+	 * substrate. Auto-pulled in when the workflow surface is loaded
+	 * (see {@see OpenclaWP_Workflow_Bootstrap::register()}); admins can
+	 * customise the system prompt by replacing the agent registration via
+	 * `openclawp_workflow_drafter_agent_args` filter or by registering a
+	 * different agent and pointing the drafter REST handler at it.
+	 */
+	public static function maybe_register_workflow_drafter_agent(): void {
+		/**
+		 * Whether to register the bundled `openclawp-workflow-drafter`
+		 * agent. Default true so the LLM-driven authoring flow under
+		 * *openclaWP → Workflows → New* works out of the box.
+		 *
+		 * @since 0.4.0
+		 *
+		 * @param bool $enabled Default true.
+		 */
+		if ( ! apply_filters( 'openclawp_register_workflow_drafter', true ) ) {
+			return;
+		}
+
+		wp_register_agent(
+			self::DRAFTER_AGENT_SLUG,
+			array(
+				'label'          => __( 'openclaWP Workflow Drafter', 'openclawp' ),
+				'description'    => self::workflow_drafter_system_prompt(),
+				'owner_resolver' => static fn(): int => get_current_user_id(),
+				'default_config' => array(
+					'provider' => 'auto',
+					'model'    => 'claude-haiku-4-5',
+				),
+				'meta'           => array(
+					'source_plugin'  => 'openclawp/openclawp.php',
+					'source_type'    => 'workflow-drafter',
+					'source_package' => 'lezama/openclawp',
+					'source_version' => OPENCLAWP_VERSION,
+				),
+			)
+		);
+	}
+
+	/**
+	 * System prompt for the workflow drafter. Static contract documentation;
+	 * the dynamic site discovery (registered abilities + agents) is appended
+	 * to the user message at call time so it stays current without
+	 * re-registering the agent.
+	 */
+	public static function workflow_drafter_system_prompt(): string {
+		return <<<PROMPT
+You are a WordPress workflow author. Your job is to translate a one-paragraph description into a valid workflow spec for the openclaWP / agents-api Workflows substrate.
+
+Spec contract (JSON shape):
+{
+  "id":      "<my-namespace>/<workflow-id>",
+  "version": "1.0.0",
+  "inputs":  { "<name>": { "type": "string"|"integer"|"boolean", "required": true|false, "description": "..." } },
+  "steps": [
+    { "id": "<step-id>", "type": "ability", "ability": "<ability-slug>", "args": { ... } },
+    { "id": "<step-id>", "type": "agent",   "agent":   "<agent-slug>",   "message": "...prompt for the LLM..." }
+  ],
+  "triggers": [
+    { "type": "on_demand" },
+    { "type": "wp_action", "hook": "<wp-action-name>" },
+    { "type": "cron",      "interval": <seconds> }
+  ],
+  "meta": { "source_plugin": "openclawp/openclawp.php", "source_type": "user-drafted" }
+}
+
+Step types:
+- `ability` — invokes a deterministic Abilities API ability. Use for read/write operations against WordPress, services, or external systems.
+- `agent`   — calls an LLM via agents/chat. Use for reasoning, classification, summarization, decision-making.
+
+Bindings (template syntax inside `args` / `message`):
+- `\${inputs.<name>}`                      — pulls from the workflow input
+- `\${steps.<step-id>.output.<dot.path>}` — pulls from a previous step's output
+
+Rules:
+1. Always include at least one step.
+2. Always include a `meta` object with `source_plugin` and `source_type` keys.
+3. If the user asks "every time X happens" use a `wp_action` trigger; "every N minutes/hours" → `cron`; otherwise `on_demand`.
+4. Prefer ability steps over agent steps when the operation is deterministic. Agent steps are for reasoning, not data fetching.
+5. Do not invent ability or agent slugs. Use the lists the caller provides as runtime context. If no fit, leave a placeholder slug (e.g. `my-plugin/my-ability`) and call it out in the explanation.
+
+Worked example. User says: *When a new comment is posted, classify it for spam and notify me if it's spam.*
+
+```json
+{
+  "id": "demo/spam-classify",
+  "version": "1.0.0",
+  "inputs": { "comment_id": { "type": "integer", "required": true } },
+  "steps": [
+    {
+      "id": "classify",
+      "type": "agent",
+      "agent": "openclawp-site-introspection",
+      "message": "Decide whether comment \${inputs.comment_id} is spam. Return JSON {\\"is_spam\\": true|false, \\"reason\\": \\"...\\"}."
+    }
+  ],
+  "triggers": [
+    { "type": "wp_action", "hook": "comment_post" }
+  ],
+  "meta": { "source_plugin": "openclawp/openclawp.php", "source_type": "user-drafted" }
+}
+```
+
+Output format: respond with **the JSON spec inside a single ```json code fence**, then a short (one-paragraph) plain-English explanation **outside** the fence. Do not include any other prose before the code fence.
+PROMPT;
 	}
 }

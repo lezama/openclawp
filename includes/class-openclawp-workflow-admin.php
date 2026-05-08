@@ -62,18 +62,27 @@ final class OpenclaWP_Workflow_Admin {
 				'restNamespace' => 'openclawp/v1',
 				'nonce'         => wp_create_nonce( 'wp_rest' ),
 				'pollInterval'  => 3000,
-				'activeId'      => isset( $_GET['workflow'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['workflow'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification
+				// phpcs:disable WordPress.Security.NonceVerification.Recommended
+				'activeId'      => isset( $_GET['workflow'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['workflow'] ) ) : '',
+				'action'        => isset( $_GET['action'] ) ? sanitize_key( (string) $_GET['action'] ) : '',
+				// phpcs:enable
 				'listUrl'       => admin_url( 'admin.php?page=' . self::PAGE_SLUG ),
+				'createUrl'     => admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&action=new' ),
 			)
 		);
 	}
 
 	public static function render_page(): void {
-		$active_id = isset( $_GET['workflow'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['workflow'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
+		$active_id = isset( $_GET['workflow'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['workflow'] ) ) : '';
+		$action    = isset( $_GET['action'] ) ? sanitize_key( (string) $_GET['action'] ) : '';
+		// phpcs:enable
 
 		echo '<div class="wrap openclawp-workflows">';
 
-		if ( '' !== $active_id ) {
+		if ( 'new' === $action ) {
+			self::render_create();
+		} elseif ( '' !== $active_id ) {
 			self::render_detail( $active_id );
 		} else {
 			self::render_list();
@@ -83,21 +92,62 @@ final class OpenclaWP_Workflow_Admin {
 	}
 
 	private static function render_list(): void {
+		$create_url = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&action=new' );
 		?>
-		<h1><?php esc_html_e( 'Workflows', 'openclawp' ); ?></h1>
-		<p class="description">
-			<?php
-			echo wp_kses(
-				__(
-					'Deterministic recipes that compose agents and abilities. Workflows are registered by plugins via <code>wp_register_workflow()</code> or stored as <code>openclawp_workflow</code> posts. Click a workflow to inspect its spec, kick off a run, or browse run history.',
-					'openclawp'
-				),
-				array( 'code' => array() )
-			);
-			?>
-		</p>
+		<h1 class="wp-heading-inline"><?php esc_html_e( 'Workflows', 'openclawp' ); ?></h1>
+		<a href="<?php echo esc_url( $create_url ); ?>" class="page-title-action">
+			<?php esc_html_e( 'Create with AI', 'openclawp' ); ?>
+		</a>
+		<hr class="wp-header-end" />
+
+		<div class="openclawp-workflows-intro">
+			<p>
+				<?php
+				echo wp_kses(
+					__(
+						'A <strong>workflow</strong> is a deterministic recipe that strings agents and abilities together — for example, "every time a comment lands, classify it for spam, and email me if it is." Each step is either an <strong>ability</strong> (a deterministic operation: read posts, send mail, hit an API) or an <strong>agent</strong> (an LLM call that reasons about something). Step outputs feed into later steps via <code>${steps.&lt;id&gt;.output.&lt;path&gt;}</code> bindings, and the whole thing is triggered by a WordPress hook, a cron tick, or an explicit run-now request.',
+						'openclawp'
+					),
+					array(
+						'strong' => array(),
+						'code'   => array(),
+					)
+				);
+				?>
+			</p>
+			<p>
+				<?php
+				echo wp_kses(
+					__(
+						'Workflows registered by plugins live in memory; workflows you create here are persisted as <code>openclawp_workflow</code> posts and survive restarts. Click <strong>Create with AI</strong> to describe a workflow in English and let the drafter agent translate it into a valid spec.',
+						'openclawp'
+					),
+					array(
+						'strong' => array(),
+						'code'   => array(),
+					)
+				);
+				?>
+			</p>
+		</div>
+
 		<div id="openclawp-workflow-list" class="openclawp-workflow-list">
 			<p><?php esc_html_e( 'Loading workflows…', 'openclawp' ); ?></p>
+		</div>
+		<?php
+	}
+
+	private static function render_create(): void {
+		$list_url = admin_url( 'admin.php?page=' . self::PAGE_SLUG );
+		?>
+		<p class="openclawp-workflow-detail__back">
+			<a href="<?php echo esc_url( $list_url ); ?>">
+				<?php echo esc_html__( '← All workflows', 'openclawp' ); ?>
+			</a>
+		</p>
+		<h1><?php esc_html_e( 'Create workflow with AI', 'openclawp' ); ?></h1>
+		<div id="openclawp-workflow-create" class="openclawp-workflow-create">
+			<p><?php esc_html_e( 'Loading…', 'openclawp' ); ?></p>
 		</div>
 		<?php
 	}
