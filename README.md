@@ -67,8 +67,10 @@ npm start
 npx wp-env run cli wp option update \
 	connectors_ai_anthropic_api_key "$ANTHROPIC_API_KEY"
 
-# 4. (Optional) For solo testing from your own paired number
-npx wp-env run cli wp option update openclawp_wacli_allow_self_messages 1
+# 4. (Optional) Test mode: respond ONLY to messages from your own paired
+#    number, ignore everyone else. Set this if you're pairing your personal
+#    account and don't want the agent answering family or coworkers.
+npx wp-env run cli wp option update openclawp_wacli_self_message_mode only
 ```
 
 Then:
@@ -149,11 +151,23 @@ Settings live at **wp-admin → openclaWP → Channels → WhatsApp**:
 | `openclawp_wacli_secret`              | HMAC-SHA256 secret. Auto-generated on first Connect. | auto |
 | `openclawp_wacli_binary`              | Path to the `wacli` executable. | resolved from PATH / Homebrew |
 | `openclawp_wacli_allowed_jids`        | Comma-separated JID allowlist. Empty = allow every chat. | `''` |
-| `openclawp_wacli_allow_self_messages` | Let the linked account's own messages reach the agent. Solo testing only — outbound `msg_id` dedupe still prevents echo loops. | `0` |
+| `openclawp_wacli_self_message_mode`   | One of `block` (default, prod-safe), `allow` (process every message including your own), `only` (test mode — respond only to your own messages, drop others). Also surfaced as a dropdown in *openclaWP → Channels → WhatsApp → Settings*. | `block` |
+
+### Self-message modes
+
+The bot is paired as a *linked device* on a real WhatsApp account, so deciding whose messages should reach the agent matters:
+
+| Mode | Linked-account messages | Other contacts | When to use |
+|---|---|---|---|
+| `block` (default) | silent-skipped | reach the agent | Production / shared bot account |
+| `allow`           | reach the agent | reach the agent | Dedicated bot account, no humans on it |
+| `only`            | reach the agent | silent-skipped | **Solo testing** — pair your own number to demo without the agent replying to your family / coworkers |
+
+The legacy boolean `openclawp_wacli_allow_self_messages` (shipped briefly between #9 and the test-mode rollout) maps to `allow` mode; the enum option is authoritative when both are set.
 
 **How it works.** `wacli sync --follow --webhook ...` POSTs each inbound message to `/openclawp/v1/wacli/webhook`, signed with HMAC-SHA256. The transport normalizes wacli's PascalCase payload, runs it through `agents/chat`, and shells out to `wacli send text` with the agent's reply. `OpenclaWP_Wacli_Channel` extends [`AgentsAPI\AI\Channels\WP_Agent_Channel`](https://github.com/Automattic/agents-api/blob/main/src/Channels/class-wp-agent-channel.php) so new transports (Telegram, Email, Slack…) implement the same base class identically.
 
-**Loop prevention.** Each outbound `msg_id` is parked in a 5-min transient; inbound webhook events whose `msg_id` matches are silent-skipped. The legacy `from_me` skip is now gated on `openclawp_wacli_allow_self_messages`, so solo testing works without losing the loop guard.
+**Loop prevention.** Each outbound `msg_id` is parked in a 5-min transient; inbound webhook events whose `msg_id` matches are silent-skipped. This guard runs in every mode (including `allow` / `only`) so the agent never reacts to its own outgoing replies.
 
 ---
 
@@ -166,7 +180,7 @@ Settings live at **wp-admin → openclaWP → Channels → WhatsApp**:
 | `openclawp_turn_runner_factory`           | Replace the wp-ai-client turn runner with a custom one. |
 | `openclawp_rest_permission_callback`      | Override the default `manage_options` REST gate. |
 | `openclawp_chat_ability_permission`       | Override the default `manage_options` gate on `openclawp/chat`. |
-| `openclawp_wacli_skip_self_messages`      | Per-request override of the from_me skip. Default reads `openclawp_wacli_allow_self_messages`. |
+| `openclawp_wacli_skip_self_messages`      | Per-request override of the from_me skip. Default tracks `openclawp_wacli_self_message_mode` (true in `block`, false in `allow` / `only`). |
 | `openclawp_wacli_binary_candidates`       | Add custom paths to wacli auto-discovery. |
 | `openclawp_channels`                      | Register additional Channels in the wp-admin Channels list view. |
 
