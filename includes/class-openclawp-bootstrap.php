@@ -30,6 +30,7 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Abilities::register();
 		OpenclaWP_Event_Sink::register();
 		OpenclaWP_Rest::register();
+		OpenclaWP_Agenttic_Bridge::register();
 		OpenclaWP_Canonical_Chat_Handler::register();
 		OpenclaWP_Workflow_Bootstrap::register();
 		OpenclaWP_Wacli_Transport::register();
@@ -57,9 +58,8 @@ final class OpenclaWP_Bootstrap {
 	public static function register_blocks(): void {
 		register_block_type( OPENCLAWP_PATH . 'blocks/chat' );
 
-		// The block's view.js depends on wp.apiFetch; declare that and inject
-		// the nonce + REST namespace via wp_localize_script when the script is
-		// enqueued (block.json's viewScript registers as `openclawp-chat-view-script`).
+		// Inject the REST nonce + bridge URL into the React view bundle. The
+		// block.json viewScript registers as `openclawp-chat-view-script`.
 		add_action(
 			'wp_enqueue_scripts',
 			array( __CLASS__, 'localize_chat_block_view_script' ),
@@ -82,6 +82,7 @@ final class OpenclaWP_Bootstrap {
 			'openclaWPConfig',
 			array(
 				'restNamespace' => 'openclawp/v1',
+				'bridgeUrl'     => esc_url_raw( rest_url( 'openclawp/v1/agenttic' ) ),
 				'nonce'         => wp_create_nonce( 'wp_rest' ),
 			)
 		);
