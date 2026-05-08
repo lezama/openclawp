@@ -95,12 +95,14 @@ Smoke covers: plugin loaded, agent registry, both abilities registered, CPT REST
 
 ## Upstream contributions
 
-Building this plugin surfaced two gaps in `Automattic/agents-api` that the team is tracking:
+Building this plugin surfaced and resolved two contract gaps in `Automattic/agents-api`. Both have landed:
 
-- [#78](https://github.com/Automattic/agents-api/issues/78) `agents-api-default-stores` companion plugin — openclaWP's CPT-backed `WP_Agent_Conversation_Store` + `WP_Agent_Conversation_Lock` implementation is offered as the seed.
-- [#95](https://github.com/Automattic/agents-api/issues/95) `int $agent_id` parameter in the conversation store contract doesn't match the slug-keyed `wp_register_agent` model.
+- [#95](https://github.com/Automattic/agents-api/issues/95) → [PR #98](https://github.com/Automattic/agents-api/pull/98) (merged) — the conversation store contract takes `int $agent_id` while agents are slug-keyed via `wp_register_agent`. PR added the `WP_Agent_Conversation_Store::META_KEY_AGENT_SLUG` convention constant + clarified docblocks. Non-breaking; openclaWP and Data Machine can converge on the same key.
+- [#96](https://github.com/Automattic/agents-api/issues/96) → [PR #97](https://github.com/Automattic/agents-api/pull/97) (merged) — `WP_Agent_Conversation_Loop::run()` short-circuited to one turn when tool mediation was enabled but `should_continue` was unset. PR defaults `should_continue` to a continue-always closure when `tool_executor` + `tool_declarations` are both provided. Mediation users get the loop they expected without boilerplate.
 
-A wp-ai-client transcript adapter (the `OpenclaWP_Message_Adapter` in this plugin) is a strong candidate for a small `agents-api-wp-ai-client` companion package — every consumer of agents-api that uses `wp_ai_client_prompt()` re-implements the same role / DTO conversion today.
+The originally-imagined [#78](https://github.com/Automattic/agents-api/issues/78) "default-stores companion" is **not** materializing in the canonical org per [maintainer direction](https://github.com/Automattic/agents-api/issues/78#issuecomment-4403225762): canonical's boundary stays strictly at contracts / value objects / registries / dispatcher-loop primitives, and concrete stores remain consumer-owned adapters. openclaWP's CPT-backed `WP_Agent_Conversation_Store` + `WP_Agent_Conversation_Lock` and `OpenclaWP_Message_Adapter` (the wp-ai-client transcript bridge) live here as **reference implementations** for any consumer that wants a "no new tables" starting point — copy what fits.
+
+The pattern that *did* land (and we'll keep contributing to) is sharpening canonical's contracts when consumer integration finds a rough edge — see #95/#96 as the template.
 
 ## Source provenance
 
