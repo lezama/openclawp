@@ -71,13 +71,49 @@ final class OpenclaWP_Wacli_Process {
 	}
 
 	/**
+	 * Remove a `<store>/LOCK` file whose recorded pid is no longer alive.
+	 * Called before every `wacli sync` spawn so a previous wacli that died
+	 * mid-login (container kill, OOM, network blip) doesn't strand future
+	 * runs with `store is locked: resource temporarily unavailable`.
+	 *
+	 * The store dir is read from the `WACLI_STORE_DIR` env (set by the
+	 * wp-env mu-plugin) with a sensible fallback to wacli's default.
+	 */
+	private static function clean_stale_store_lock( string $binary ): void {
+		unset( $binary );
+		$store_dir = (string) ( getenv( 'WACLI_STORE_DIR' ) ?: $_SERVER['WACLI_STORE_DIR'] ?? '' );
+		if ( '' === $store_dir ) {
+			// Fall back to wacli's documented defaults.
+			$store_dir = is_dir( '/var/lib/wacli' ) ? '/var/lib/wacli' : ( $_SERVER['HOME'] ?? '' ) . '/.wacli';
+		}
+		$lock_path = rtrim( $store_dir, '/' ) . '/LOCK';
+		if ( '' === $store_dir || ! file_exists( $lock_path ) ) {
+			return;
+		}
+
+		$contents = (string) file_get_contents( $lock_path );
+		if ( ! preg_match( '/pid=(\d+)/', $contents, $m ) ) {
+			return;
+		}
+		$pid = (int) $m[1];
+		if ( $pid <= 0 || self::is_alive( $pid ) ) {
+			// Live owner — leave it alone, wacli's --lock-wait will sort it out.
+			return;
+		}
+
+		@unlink( $lock_path );
+	}
+
+	/**
 	 * Quick read of `wacli auth status --json` to decide whether the local
 	 * store is already paired. Suppresses non-zero exit codes — wacli only
 	 * returns success when the binary is callable, so any failure here just
 	 * means "fall back to QR pairing".
 	 */
 	private static function is_already_authenticated( string $binary ): bool {
-		$cmd  = escapeshellarg( $binary ) . ' auth status --json 2>/dev/null';
+		// `--lock-wait 5s` so a momentarily-busy store doesn't make us
+		// fall through to a fresh QR pair when we already have a session.
+		$cmd  = escapeshellarg( $binary ) . ' --lock-wait 5s auth status --json 2>/dev/null';
 		$json = (string) shell_exec( $cmd );
 		if ( '' === $json ) {
 			return false;
@@ -176,11 +212,21 @@ final class OpenclaWP_Wacli_Process {
 		if ( is_array( $current ) ) {
 			if ( ! empty( $current['pid'] ) && self::is_alive( (int) $current['pid'] ) ) {
 				self::kill_pid( (int) $current['pid'] );
+				// Give the OS a moment to release the file lock the dying
+				// process held. Skipping this means the new sync race-loses
+				// to the old sync's still-mapped lock fd.
+				usleep( 500_000 );
 			}
 			if ( ! empty( $current['events_file'] ) && file_exists( $current['events_file'] ) ) {
 				@unlink( $current['events_file'] );
 			}
 		}
+
+		// Clear any stale wacli store lock from a process that died without
+		// releasing it (container kill, OOM, crash mid-login). wacli refuses
+		// to start while a LOCK file with a non-self pid is present, even
+		// when that pid is long gone.
+		self::clean_stale_store_lock( $binary );
 
 		$events_file = tempnam( sys_get_temp_dir(), 'wacli-sync-' );
 		if ( false === $events_file ) {
@@ -188,7 +234,9 @@ final class OpenclaWP_Wacli_Process {
 		}
 
 		$cmd = sprintf(
-			'nohup %s sync --follow --webhook %s --webhook-secret %s --events </dev/null >>%s 2>&1 & echo $!',
+			// `--lock-wait 10s` lets the new sync wait briefly if a previous
+			// process is still releasing the store, instead of hard-failing.
+			'nohup %s --lock-wait 10s sync --follow --webhook %s --webhook-secret %s --events </dev/null >>%s 2>&1 & echo $!',
 			escapeshellarg( $binary ),
 			escapeshellarg( $url ),
 			escapeshellarg( $secret ),
