@@ -27,6 +27,11 @@ final class OpenclaWP_Workflow_Bootstrap {
 		add_action( 'init', array( 'OpenclaWP_Workflow_Run_Recorder', 'register_post_type' ), 5 );
 
 		OpenclaWP_Workflow_Canonical_Handler::register();
+		OpenclaWP_Workflow_Rest::register();
+
+		if ( is_admin() ) {
+			OpenclaWP_Workflow_Admin::register();
+		}
 
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_example_workflow' ) );
 	}
