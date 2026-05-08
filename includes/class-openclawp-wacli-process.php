@@ -13,13 +13,16 @@ defined( 'ABSPATH' ) || exit;
 
 final class OpenclaWP_Wacli_Process {
 
-	private const STATE_OPTION = 'openclawp_wacli_state';
+	private const STATE_OPTION  = 'openclawp_wacli_state';
 	private const BINARY_OPTION = 'openclawp_wacli_binary';
 
 	public const MODE_IDLE     = 'idle';
 	public const MODE_PAIRING  = 'pairing';
 	public const MODE_SYNCING  = 'syncing';
 	public const MODE_FAILED   = 'failed';
+
+	public const STAGE_AUTH = 'auth';
+	public const STAGE_SYNC = 'sync';
 
 	/**
 	 * Resolve the wacli executable. Reads the setting first; on miss, walks
@@ -68,6 +71,22 @@ final class OpenclaWP_Wacli_Process {
 	}
 
 	/**
+	 * Quick read of `wacli auth status --json` to decide whether the local
+	 * store is already paired. Suppresses non-zero exit codes — wacli only
+	 * returns success when the binary is callable, so any failure here just
+	 * means "fall back to QR pairing".
+	 */
+	private static function is_already_authenticated( string $binary ): bool {
+		$cmd  = escapeshellarg( $binary ) . ' auth status --json 2>/dev/null';
+		$json = (string) shell_exec( $cmd );
+		if ( '' === $json ) {
+			return false;
+		}
+		$decoded = json_decode( $json, true );
+		return is_array( $decoded ) && ! empty( $decoded['data']['authenticated'] );
+	}
+
+	/**
 	 * Spawn `wacli auth --follow --qr-format text --events`, detached, with
 	 * stderr (the events stream) redirected to a temp file we can poll.
 	 *
@@ -82,6 +101,13 @@ final class OpenclaWP_Wacli_Process {
 		$current = self::get_state();
 		if ( in_array( $current['mode'], array( self::MODE_PAIRING, self::MODE_SYNCING ), true ) && self::is_alive( (int) $current['pid'] ) ) {
 			return new WP_Error( 'wacli_already_running', 'wacli is already running.', $current );
+		}
+
+		// If the local store already has a paired session, skip QR pairing and
+		// jump straight to webhook-posting sync. Avoids a second `auth` run
+		// fighting the first for the store lock when the admin double-clicks.
+		if ( self::is_already_authenticated( $binary ) ) {
+			return self::start_sync();
 		}
 
 		// Clean any stale events file before starting.
@@ -109,6 +135,7 @@ final class OpenclaWP_Wacli_Process {
 
 		$state = array(
 			'mode'        => self::MODE_PAIRING,
+			'stage'       => self::STAGE_AUTH,
 			'pid'         => $pid,
 			'events_file' => $events_file,
 			'qr_payload'  => '',
@@ -122,6 +149,110 @@ final class OpenclaWP_Wacli_Process {
 		update_option( self::STATE_OPTION, $state, false );
 
 		return array( 'pid' => $pid, 'events_file' => $events_file );
+	}
+
+	/**
+	 * Spawn `wacli sync --follow --webhook <URL> --webhook-secret <SECRET>
+	 * --events`, detached. Called after pairing succeeds; replaces the
+	 * auth process so a single wacli instance owns the session.
+	 *
+	 * `auth --follow` keeps the WhatsApp connection alive but does NOT
+	 * forward messages anywhere. `sync --follow --webhook ...` is what
+	 * actually POSTs each inbound message to /wp-json/openclawp/v1/wacli/webhook.
+	 *
+	 * @return WP_Error|array{pid:int,events_file:string}
+	 */
+	public static function start_sync() {
+		$binary = self::resolve_binary();
+		if ( '' === $binary ) {
+			return new WP_Error( 'wacli_not_found', 'wacli binary not found.' );
+		}
+
+		$secret = self::ensure_webhook_secret();
+		$url    = self::webhook_url_for_runtime();
+
+		// Stop the auth process (and clean its events file) before starting sync.
+		$current = get_option( self::STATE_OPTION, array() );
+		if ( is_array( $current ) ) {
+			if ( ! empty( $current['pid'] ) && self::is_alive( (int) $current['pid'] ) ) {
+				self::kill_pid( (int) $current['pid'] );
+			}
+			if ( ! empty( $current['events_file'] ) && file_exists( $current['events_file'] ) ) {
+				@unlink( $current['events_file'] );
+			}
+		}
+
+		$events_file = tempnam( sys_get_temp_dir(), 'wacli-sync-' );
+		if ( false === $events_file ) {
+			return new WP_Error( 'wacli_tempfile_failed', 'Could not create temp file for wacli sync events.' );
+		}
+
+		$cmd = sprintf(
+			'nohup %s sync --follow --webhook %s --webhook-secret %s --events </dev/null >>%s 2>&1 & echo $!',
+			escapeshellarg( $binary ),
+			escapeshellarg( $url ),
+			escapeshellarg( $secret ),
+			escapeshellarg( $events_file )
+		);
+
+		$pid = (int) trim( (string) shell_exec( $cmd ) );
+		if ( $pid <= 0 ) {
+			return new WP_Error( 'wacli_spawn_failed', 'Could not start wacli sync process.' );
+		}
+
+		$paired_jid = is_array( $current ) ? (string) ( $current['paired_jid'] ?? '' ) : '';
+		$state      = array(
+			'mode'          => self::MODE_SYNCING,
+			'stage'         => self::STAGE_SYNC,
+			'pid'           => $pid,
+			'events_file'   => $events_file,
+			'qr_payload'    => '',
+			'qr_seen_at'    => 0,
+			'paired_jid'    => $paired_jid,
+			'started_at'    => time(),
+			'last_event'    => '',
+			'last_event_at' => 0,
+			'error'         => '',
+		);
+		update_option( self::STATE_OPTION, $state, false );
+
+		return array( 'pid' => $pid, 'events_file' => $events_file );
+	}
+
+	/**
+	 * Read the HMAC secret used to sign wacli's webhook deliveries. Generated
+	 * lazily on first use so admins don't have to remember to set it.
+	 */
+	public static function ensure_webhook_secret(): string {
+		$secret = (string) get_option( OpenclaWP_Wacli_Transport::SECRET_OPTION, '' );
+		if ( '' !== $secret ) {
+			return $secret;
+		}
+		$secret = bin2hex( random_bytes( 32 ) );
+		update_option( OpenclaWP_Wacli_Transport::SECRET_OPTION, $secret, false );
+		return $secret;
+	}
+
+	/**
+	 * Build the webhook URL wacli should POST to. Inside dev containers
+	 * (wp-env, Studio's Docker mode), home_url() resolves to the host-side
+	 * URL like http://localhost:8888 — which the container itself can't
+	 * reach. Apache listens on port 80 inside the container, so for
+	 * localhost-style hosts we drop the port so wacli can hit Apache locally.
+	 */
+	public static function webhook_url_for_runtime(): string {
+		$path = '/wp-json/' . OpenclaWP_Wacli_Transport::REST_NAMESPACE . '/wacli/webhook';
+
+		$home = wp_parse_url( home_url() );
+		$host = isset( $home['host'] ) ? (string) $home['host'] : 'localhost';
+
+		if ( in_array( $host, array( 'localhost', '127.0.0.1' ), true ) ) {
+			return 'http://localhost' . $path;
+		}
+
+		$scheme = isset( $home['scheme'] ) ? (string) $home['scheme'] : 'http';
+		$port   = isset( $home['port'] ) ? ':' . (int) $home['port'] : '';
+		return $scheme . '://' . $host . $port . $path;
 	}
 
 	/**
@@ -147,6 +278,24 @@ final class OpenclaWP_Wacli_Process {
 		if ( ! empty( $state['events_file'] ) && file_exists( $state['events_file'] ) ) {
 			$state = self::merge_events_into_state( $state );
 			update_option( self::STATE_OPTION, $state, false );
+		}
+
+		// Auto-transition: pairing finished but the auth process is still
+		// running. Swap it for `wacli sync --webhook ...` so messages start
+		// flowing to the webhook. Caller-driven so the spawn happens during
+		// the next admin poll, never inline with a write request.
+		if (
+			self::MODE_SYNCING === ( $state['mode'] ?? '' )
+			&& self::STAGE_AUTH === ( $state['stage'] ?? '' )
+		) {
+			$result = self::start_sync();
+			if ( is_wp_error( $result ) ) {
+				$state['mode']  = self::MODE_FAILED;
+				$state['error'] = $result->get_error_message();
+				update_option( self::STATE_OPTION, $state, false );
+			} else {
+				$state = get_option( self::STATE_OPTION, $state );
+			}
 		}
 
 		return $state;
@@ -202,6 +351,7 @@ final class OpenclaWP_Wacli_Process {
 	private static function idle_state(): array {
 		return array(
 			'mode'          => self::MODE_IDLE,
+			'stage'         => '',
 			'pid'           => 0,
 			'events_file'   => '',
 			'qr_payload'    => '',
@@ -258,11 +408,15 @@ final class OpenclaWP_Wacli_Process {
 	public static function apply_event( array $state, array $event ): array {
 		$type = (string) ( $event['type'] ?? $event['event'] ?? '' );
 
+		// wacli wraps event-specific fields inside a `data` object.
+		$data = isset( $event['data'] ) && is_array( $event['data'] ) ? $event['data'] : array();
+
 		switch ( $type ) {
 			case 'qr':
 			case 'qr_code':
 			case 'pair_qr':
-				$payload = (string) ( $event['code'] ?? $event['payload'] ?? $event['qr'] ?? '' );
+				$payload = (string) ( $data['code'] ?? $data['payload'] ?? $data['qr']
+					?? $event['code'] ?? $event['payload'] ?? $event['qr'] ?? '' );
 				if ( '' !== $payload ) {
 					$state['qr_payload'] = $payload;
 					$state['qr_seen_at'] = isset( $event['ts'] ) ? (int) $event['ts'] : time();
@@ -273,7 +427,9 @@ final class OpenclaWP_Wacli_Process {
 			case 'paired':
 			case 'pair_success':
 			case 'pairing_complete':
-				$state['paired_jid'] = (string) ( $event['jid'] ?? $event['user'] ?? $state['paired_jid'] );
+			case 'auth_complete':
+				$state['paired_jid'] = (string) ( $data['jid'] ?? $data['user']
+					?? $event['jid'] ?? $event['user'] ?? $state['paired_jid'] );
 				$state['qr_payload'] = '';
 				$state['mode']       = self::MODE_SYNCING;
 				$state['error']      = '';
@@ -289,7 +445,8 @@ final class OpenclaWP_Wacli_Process {
 			case 'error':
 			case 'fatal':
 				$state['mode']  = self::MODE_FAILED;
-				$state['error'] = (string) ( $event['message'] ?? $event['error'] ?? 'wacli reported an error.' );
+				$state['error'] = (string) ( $data['message'] ?? $data['error']
+					?? $event['message'] ?? $event['error'] ?? 'wacli reported an error.' );
 				break;
 		}
 
