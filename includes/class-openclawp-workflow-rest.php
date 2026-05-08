@@ -25,6 +25,11 @@ final class OpenclaWP_Workflow_Rest {
 	}
 
 	public static function register_routes(): void {
+		// Workflow ids (and run ids) are slash-bearing slugs (`my-plugin/foo`),
+		// which WP REST routes cannot accept as path captures — `%2F` doesn't
+		// decode before regex matching, so the path-segment forms 404. We use
+		// query strings instead: the id rides in `?id=...` / `?run_id=...`.
+
 		register_rest_route(
 			self::NAMESPACE,
 			'/workflows',
@@ -37,26 +42,32 @@ final class OpenclaWP_Workflow_Rest {
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/workflows/(?P<id>[A-Za-z0-9_\-\/]+)',
+			'/workflow',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( __CLASS__, 'get_workflow' ),
 				'permission_callback' => array( __CLASS__, 'can_manage' ),
 				'args'                => array(
-					'id' => array( 'type' => 'string' ),
+					'id' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
 				),
 			)
 		);
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/workflows/(?P<id>[A-Za-z0-9_\-\/]+)/run',
+			'/workflow/run',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( __CLASS__, 'run_workflow' ),
 				'permission_callback' => array( __CLASS__, 'can_manage' ),
 				'args'                => array(
-					'id'     => array( 'type' => 'string' ),
+					'id'     => array(
+						'type'     => 'string',
+						'required' => true,
+					),
 					'inputs' => array(
 						'type'    => 'object',
 						'default' => array(),
@@ -84,13 +95,16 @@ final class OpenclaWP_Workflow_Rest {
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/workflow-runs/(?P<run_id>[A-Za-z0-9_\-]+)',
+			'/workflow-run',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( __CLASS__, 'get_run' ),
 				'permission_callback' => array( __CLASS__, 'can_manage' ),
 				'args'                => array(
-					'run_id' => array( 'type' => 'string' ),
+					'run_id' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
 				),
 			)
 		);
@@ -132,6 +146,15 @@ final class OpenclaWP_Workflow_Rest {
 
 	public static function get_workflow( WP_REST_Request $request ): WP_REST_Response {
 		$id   = (string) $request->get_param( 'id' );
+		if ( '' === $id ) {
+			return new WP_REST_Response(
+				array(
+					'error'   => 'missing_id',
+					'message' => 'Pass `?id=<workflow-id>` to fetch a specific workflow.',
+				),
+				400
+			);
+		}
 		$spec = self::resolve_spec( $id );
 		if ( null === $spec ) {
 			return new WP_REST_Response(
@@ -148,6 +171,16 @@ final class OpenclaWP_Workflow_Rest {
 	public static function run_workflow( WP_REST_Request $request ): WP_REST_Response {
 		$id     = (string) $request->get_param( 'id' );
 		$inputs = (array) $request->get_param( 'inputs' );
+
+		if ( '' === $id ) {
+			return new WP_REST_Response(
+				array(
+					'error'   => 'missing_id',
+					'message' => 'Pass `?id=<workflow-id>` to run a specific workflow.',
+				),
+				400
+			);
+		}
 
 		if ( ! function_exists( 'wp_get_ability' ) ) {
 			return new WP_REST_Response(
@@ -212,12 +245,20 @@ final class OpenclaWP_Workflow_Rest {
 	}
 
 	public static function get_run( WP_REST_Request $request ): WP_REST_Response {
-		$run = OpenclaWP_Workflow_Run_Recorder::instance()->find( (string) $request->get_param( 'run_id' ) );
-		if ( null === $run ) {
+		$run_id = (string) $request->get_param( 'run_id' );
+		if ( '' === $run_id ) {
 			return new WP_REST_Response(
 				array(
-					'error' => 'unknown_run',
+					'error'   => 'missing_run_id',
+					'message' => 'Pass `?run_id=<run-id>` to fetch a specific run.',
 				),
+				400
+			);
+		}
+		$run = OpenclaWP_Workflow_Run_Recorder::instance()->find( $run_id );
+		if ( null === $run ) {
+			return new WP_REST_Response(
+				array( 'error' => 'unknown_run' ),
 				404
 			);
 		}
