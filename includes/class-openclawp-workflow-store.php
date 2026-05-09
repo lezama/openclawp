@@ -8,8 +8,8 @@
  * indexed via post-meta so look-ups by id are direct.
  *
  * The CPT is `show_ui = false` because openclaWP renders its own Workflows
- * admin (in a follow-up); WP-Query / REST access still works through
- * `/wp/v2/openclawp-workflows` for tooling that wants raw access.
+ * admin (in a follow-up); access is via the authenticated custom routes
+ * under `/openclawp/v1/workflows`.
  *
  * @package OpenclaWP
  */
@@ -35,9 +35,7 @@ final class OpenclaWP_Workflow_Store implements WP_Agent_Workflow_Store {
 				),
 				'public'              => false,
 				'show_ui'             => false,
-				'show_in_rest'        => true,
-				'rest_base'           => 'openclawp-workflows',
-				'rest_namespace'      => 'wp/v2',
+				'show_in_rest'        => false,
 				'exclude_from_search' => true,
 				'rewrite'             => false,
 				'has_archive'         => false,

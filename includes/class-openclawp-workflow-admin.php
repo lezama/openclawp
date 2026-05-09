@@ -6,7 +6,7 @@
  * spec preview, a run-now form built from `inputs` schema, and a
  * recent-runs list with per-run step trace. CRUD (create / edit) lands
  * in a follow-up — for now specs come from PHP registration and the
- * REST endpoint accepts uploads through `wp/v2/openclawp-workflows`.
+ * REST endpoint accepts uploads through `openclawp/v1/workflow`.
  *
  * @package OpenclaWP
  */
