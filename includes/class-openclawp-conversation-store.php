@@ -21,7 +21,7 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 	private const META_SESSION_ID           = '_openclawp_session_id';
 	private const META_WORKSPACE_TYPE       = '_openclawp_workspace_type';
 	private const META_WORKSPACE_ID         = '_openclawp_workspace_id';
-	private const META_AGENT_ID             = '_openclawp_agent_id';
+	private const META_AGENT_SLUG           = '_openclawp_agent_slug';
 	private const META_METADATA             = '_openclawp_metadata';
 	private const META_PROVIDER             = '_openclawp_provider';
 	private const META_MODEL                = '_openclawp_model';
@@ -85,7 +85,7 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 	public function create_session(
 		WP_Agent_Workspace_Scope $workspace,
 		int $user_id,
-		int $agent_id = 0,
+		string $agent_slug = '',
 		array $metadata = array(),
 		string $context = 'chat'
 	): string {
@@ -111,7 +111,7 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 		update_post_meta( $post_id, self::META_SESSION_ID, $session_id );
 		update_post_meta( $post_id, self::META_WORKSPACE_TYPE, $workspace->workspace_type );
 		update_post_meta( $post_id, self::META_WORKSPACE_ID, $workspace->workspace_id );
-		update_post_meta( $post_id, self::META_AGENT_ID, $agent_id );
+		update_post_meta( $post_id, self::META_AGENT_SLUG, $agent_slug );
 		update_post_meta( $post_id, self::META_METADATA, wp_json_encode( $metadata ) );
 		update_post_meta( $post_id, self::META_CONTEXT, $context );
 
@@ -387,7 +387,7 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 			'workspace_type'       => (string) get_post_meta( $post->ID, self::META_WORKSPACE_TYPE, true ),
 			'workspace_id'         => (string) get_post_meta( $post->ID, self::META_WORKSPACE_ID, true ),
 			'user_id'              => (int) $post->post_author,
-			'agent_id'             => (int) get_post_meta( $post->ID, self::META_AGENT_ID, true ),
+			'agent_slug'           => (string) get_post_meta( $post->ID, self::META_AGENT_SLUG, true ),
 			'title'                => (string) $post->post_title,
 			'messages'             => $this->decode_messages( $post->post_content ),
 			'metadata'             => $metadata,

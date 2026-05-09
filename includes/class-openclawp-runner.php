@@ -47,8 +47,8 @@ final class OpenclaWP_Runner {
 			$session_id = $store->create_session(
 				$workspace,
 				$user_id,
-				0,
-				array( WP_Agent_Conversation_Store::META_KEY_AGENT_SLUG => $agent_slug ),
+				$agent_slug,
+				array(),
 				'chat'
 			);
 			if ( '' === $session_id ) {
@@ -116,11 +116,11 @@ final class OpenclaWP_Runner {
 
 		$final_messages = isset( $result['messages'] ) && is_array( $result['messages'] ) ? $result['messages'] : $messages;
 
-		$store->update_session(
-			$session_id,
-			$final_messages,
-			array( WP_Agent_Conversation_Store::META_KEY_AGENT_SLUG => $agent_slug )
-		);
+		// Slug already stored on the session at create-time (third arg to
+		// `create_session`). No need to mirror it back into metadata —
+		// the metadata payload is for *additional* per-update annotations,
+		// not the durable agent identity.
+		$store->update_session( $session_id, $final_messages );
 
 		return array(
 			'session_id' => $session_id,
@@ -213,7 +213,20 @@ final class OpenclaWP_Runner {
 				$telemetry['token_usage'] = self::extract_token_usage( $generated );
 
 				$tool_calls    = self::extract_tool_calls( $generated );
-				$assistant_txt = method_exists( $generated, 'toText' ) ? (string) $generated->toText() : '';
+				// `toText()` throws "No text content found in first candidate"
+				// when the model responded with only tool calls (a normal
+				// outcome on the first mediation turn for tool-heavy agents
+				// like coordinators delegating to subagents). Swallow that
+				// case as empty text — the loop's mediation path will pick
+				// up the tool calls regardless.
+				$assistant_txt = '';
+				if ( method_exists( $generated, 'toText' ) ) {
+					try {
+						$assistant_txt = (string) $generated->toText();
+					} catch ( \Throwable $e ) {
+						$assistant_txt = '';
+					}
+				}
 
 				self::emit_chat_telemetry( $telemetry );
 
