@@ -89,6 +89,19 @@ final class OpenclaWP_Rest {
 		$session_id = is_string( $session_id ) ? $session_id : null;
 		$user_id    = get_current_user_id();
 
+		if ( null !== $session_id && '' !== trim( $session_id ) ) {
+			$store   = OpenclaWP_Conversation_Store::instance();
+			$session = $store->get_session( $session_id );
+
+			if ( null === $session ) {
+				return new WP_Error( 'openclawp_session_not_found', __( 'Session not found.', 'openclawp' ), array( 'status' => 404 ) );
+			}
+
+			if ( ! self::current_user_owns( $session ) ) {
+				return new WP_Error( 'openclawp_forbidden', __( 'Forbidden.', 'openclawp' ), array( 'status' => 403 ) );
+			}
+		}
+
 		$result = OpenclaWP_Runner::run_turn( $agent_slug, $message, $session_id, $user_id );
 
 		if ( ! empty( $result['error'] ) ) {
