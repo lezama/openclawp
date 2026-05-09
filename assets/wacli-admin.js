@@ -27,80 +27,102 @@
 		return Math.floor( d / 3600 ) + 'h ago';
 	}
 
+	function el( tag, attrs, children ) {
+		const node = document.createElement( tag );
+		if ( attrs ) {
+			Object.keys( attrs ).forEach( function ( k ) {
+				if ( k === 'className' ) {
+					node.className = attrs[ k ];
+				} else {
+					node.setAttribute( k, attrs[ k ] );
+				}
+			} );
+		}
+		( children || [] ).forEach( function ( c ) {
+			if ( typeof c === 'string' ) {
+				node.appendChild( document.createTextNode( c ) );
+			} else if ( c ) {
+				node.appendChild( c );
+			}
+		} );
+		return node;
+	}
+
 	function render( s ) {
 		if ( ! state.root ) return;
 		const root = state.root;
+		root.textContent = '';
 
 		if ( s.mode === 'idle' ) {
-			root.innerHTML =
-				'<div class="card"><h2>WhatsApp not connected</h2>' +
-				'<p>Pair this site as a WhatsApp linked device. The agent will reply on your behalf to incoming messages from allowlisted chats.</p>' +
-				'<button class="button button-primary button-hero" id="openclawp-wacli-connect">Connect WhatsApp</button></div>';
-			document
-				.getElementById( 'openclawp-wacli-connect' )
-				.addEventListener( 'click', onConnect );
+			const btn = el( 'button', { className: 'button button-primary button-hero', id: 'openclawp-wacli-connect' }, [ 'Connect WhatsApp' ] );
+			root.appendChild( el( 'div', { className: 'card' }, [
+				el( 'h2', null, [ 'WhatsApp not connected' ] ),
+				el( 'p', null, [ 'Pair this site as a WhatsApp linked device. The agent will reply on your behalf to incoming messages from allowlisted chats.' ] ),
+				btn,
+			] ) );
+			btn.addEventListener( 'click', onConnect );
 			return;
 		}
 
 		if ( s.mode === 'pairing' ) {
-			root.innerHTML =
-				'<div class="card"><h2>Scan to pair</h2>' +
-				'<p>Open WhatsApp on your phone → Settings → Linked Devices → Link a Device, and scan:</p>' +
-				'<div id="openclawp-wacli-qr"></div>' +
-				'<p class="description">QR last refreshed ' +
-				fmtAgo( s.qr_seen_at ) +
-				'. wacli rotates the code automatically; this view follows.</p>' +
-				'<button class="button" id="openclawp-wacli-cancel">Cancel</button></div>';
+			const qrDiv = el( 'div', { id: 'openclawp-wacli-qr' } );
+			const cancelBtn = el( 'button', { className: 'button', id: 'openclawp-wacli-cancel' }, [ 'Cancel' ] );
+			root.appendChild( el( 'div', { className: 'card' }, [
+				el( 'h2', null, [ 'Scan to pair' ] ),
+				el( 'p', null, [ 'Open WhatsApp on your phone → Settings → Linked Devices → Link a Device, and scan:' ] ),
+				qrDiv,
+				el( 'p', { className: 'description' }, [ 'QR last refreshed ' + fmtAgo( s.qr_seen_at ) + '. wacli rotates the code automatically; this view follows.' ] ),
+				cancelBtn,
+			] ) );
 
-			const target = document.getElementById( 'openclawp-wacli-qr' );
 			if ( s.qr_payload ) {
-				target.innerHTML = '';
-				new QRCode( target, {
+				new QRCode( qrDiv, {
 					text: s.qr_payload,
 					width: 280,
 					height: 280,
 					correctLevel: QRCode.CorrectLevel.M,
 				} );
 			} else {
-				target.textContent = 'Waiting for wacli to emit the first QR…';
+				qrDiv.textContent = 'Waiting for wacli to emit the first QR…';
 			}
-			document
-				.getElementById( 'openclawp-wacli-cancel' )
-				.addEventListener( 'click', onDisconnect );
+			cancelBtn.addEventListener( 'click', onDisconnect );
 			return;
 		}
 
 		if ( s.mode === 'syncing' ) {
-			root.innerHTML =
-				'<div class="card"><h2>Connected ✅</h2>' +
-				'<p><strong>Paired as:</strong> <code>' +
-				( s.paired_jid || '(unknown)' ) +
-				'</code></p>' +
-				'<p><strong>Last event:</strong> ' +
-				( s.last_event || '(none)' ) +
-				' · ' +
-				fmtAgo( s.last_event_at ) +
-				'</p>' +
-				'<p>Incoming WhatsApp messages from allowlisted chats are forwarded to <code>' +
-				( openclaWPWacli.agent || '(no agent set)' ) +
-				'</code>.</p>' +
-				'<button class="button" id="openclawp-wacli-disconnect">Disconnect</button></div>';
-			document
-				.getElementById( 'openclawp-wacli-disconnect' )
-				.addEventListener( 'click', onDisconnect );
+			const disconnectBtn = el( 'button', { className: 'button', id: 'openclawp-wacli-disconnect' }, [ 'Disconnect' ] );
+			root.appendChild( el( 'div', { className: 'card' }, [
+				el( 'h2', null, [ 'Connected ✅' ] ),
+				el( 'p', null, [
+					el( 'strong', null, [ 'Paired as:' ] ),
+					' ',
+					el( 'code', null, [ s.paired_jid || '(unknown)' ] ),
+				] ),
+				el( 'p', null, [
+					el( 'strong', null, [ 'Last event:' ] ),
+					' ',
+					el( 'span', null, [ s.last_event || '(none)' ] ),
+					' · ' + fmtAgo( s.last_event_at ),
+				] ),
+				el( 'p', null, [
+					'Incoming WhatsApp messages from allowlisted chats are forwarded to ',
+					el( 'code', null, [ openclaWPWacli.agent || '(no agent set)' ] ),
+					'.',
+				] ),
+				disconnectBtn,
+			] ) );
+			disconnectBtn.addEventListener( 'click', onDisconnect );
 			return;
 		}
 
 		// failed
-		root.innerHTML =
-			'<div class="card error"><h2>Connection failed</h2>' +
-			'<p>' +
-			( s.error || 'Unknown error' ) +
-			'</p>' +
-			'<button class="button button-primary" id="openclawp-wacli-retry">Try again</button></div>';
-		document
-			.getElementById( 'openclawp-wacli-retry' )
-			.addEventListener( 'click', onConnect );
+		const retryBtn = el( 'button', { className: 'button button-primary', id: 'openclawp-wacli-retry' }, [ 'Try again' ] );
+		root.appendChild( el( 'div', { className: 'card error' }, [
+			el( 'h2', null, [ 'Connection failed' ] ),
+			el( 'p', null, [ s.error || 'Unknown error' ] ),
+			retryBtn,
+		] ) );
+		retryBtn.addEventListener( 'click', onConnect );
 	}
 
 	async function refresh() {
