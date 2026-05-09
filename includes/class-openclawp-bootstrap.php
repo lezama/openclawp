@@ -33,11 +33,13 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Agenttic_Bridge::register();
 		OpenclaWP_Canonical_Chat_Handler::register();
 		OpenclaWP_Workflow_Bootstrap::register();
+		OpenclaWP_Tasks_Rest::register();
 		OpenclaWP_Wacli_Transport::register();
 		OpenclaWP_Wacli_Rest::register();
 		if ( is_admin() ) {
 			OpenclaWP_Admin::register();
 			OpenclaWP_Channels_Admin::register();
+			OpenclaWP_Tasks_Admin::register();
 			OpenclaWP_Wacli_Admin::register();
 		}
 
