@@ -18,14 +18,18 @@ defined( 'ABSPATH' ) || exit;
 
 final class OpenclaWP_Agent_Registrar {
 
-	public const EXAMPLE_AGENT_SLUG  = 'openclawp-example';
-	public const DRAFTER_AGENT_SLUG  = 'openclawp-workflow-drafter';
+	public const EXAMPLE_AGENT_SLUG     = 'openclawp-example';
+	public const DRAFTER_AGENT_SLUG     = 'openclawp-workflow-drafter';
+	public const COORDINATOR_AGENT_SLUG = 'openclawp-coordinator';
 
 	public static function register(): void {
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_example_agent' ), 10 );
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_loop_demo_agent' ), 10 );
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_site_introspection_agent' ), 10 );
 		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_workflow_drafter_agent' ), 10 );
+		// Coordinator runs late so its subagents (loop-demo, site-introspection)
+		// are already in the registry by the time it reads them.
+		add_action( 'wp_agents_api_init', array( __CLASS__, 'maybe_register_coordinator_demo_agent' ), 20 );
 	}
 
 	public static function maybe_register_site_introspection_agent(): void {
@@ -239,5 +243,67 @@ Worked example. User says: *When a new comment is posted, classify it for spam a
 
 Output format: respond with **the JSON spec inside a single ```json code fence**, then a short (one-paragraph) plain-English explanation **outside** the fence. Do not include any other prose before the code fence.
 PROMPT;
+	}
+
+	/**
+	 * Coordinator demo: an agent with no abilities of its own, but with two
+	 * subagents (site-introspection + loop-demo). The Tools_Resolver
+	 * surfaces each subagent as a `delegate-to-<slug>` tool, so the
+	 * coordinator's main loop chooses which subagent to dispatch to based
+	 * on the user's request.
+	 *
+	 * Mirrors the Anthropic deck pattern (Commander coordinates Detector +
+	 * Navigator). Opt in with:
+	 *
+	 *     add_filter( 'openclawp_register_coordinator_demo', '__return_true' );
+	 *     add_filter( 'openclawp_register_loop_demo', '__return_true' );
+	 *     add_filter( 'openclawp_register_site_introspection', '__return_true' );
+	 *
+	 * The coordinator gracefully degrades when its subagents aren't
+	 * registered — it just ends up with fewer (or zero) delegate tools.
+	 */
+	public static function maybe_register_coordinator_demo_agent(): void {
+		/**
+		 * Whether to register the bundled `openclawp-coordinator` demo agent.
+		 *
+		 * Off by default. The coordinator is opinionated about its
+		 * subagents (site-introspection + loop-demo), so most production
+		 * sites should register their own coordinator with the right
+		 * subagent set instead.
+		 *
+		 * @since 0.6.0
+		 *
+		 * @param bool $enabled Default false.
+		 */
+		if ( ! apply_filters( 'openclawp_register_coordinator_demo', false ) ) {
+			return;
+		}
+
+		wp_register_agent(
+			self::COORDINATOR_AGENT_SLUG,
+			array(
+				'label'          => __( 'openclaWP Coordinator', 'openclawp' ),
+				'description'    => __(
+					'You are a coordinator. You have two subagents at your disposal — a site-introspection agent (read-only access to recent posts, comment counts, active plugins, current user) and a loop demo agent (the current time). Decide which subagent best fits the user\'s question, call the matching delegate-to-* tool with a focused prompt for that subagent, then summarise its reply. Never answer factual questions yourself — always delegate. If neither subagent fits, say so.',
+					'openclawp'
+				),
+				'owner_resolver' => static fn(): int => get_current_user_id(),
+				'default_config' => array(
+					'provider'  => 'auto',
+					'model'     => 'claude-haiku-4-5',
+					'max_turns' => 6,
+				),
+				'subagents'      => array(
+					'openclawp-site-introspection',
+					'openclawp-loop-demo',
+				),
+				'meta'           => array(
+					'source_plugin'  => 'openclawp/openclawp.php',
+					'source_type'    => 'coordinator-demo-agent',
+					'source_package' => 'lezama/openclawp',
+					'source_version' => OPENCLAWP_VERSION,
+				),
+			)
+		);
 	}
 }

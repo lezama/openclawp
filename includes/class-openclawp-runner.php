@@ -80,7 +80,13 @@ final class OpenclaWP_Runner {
 		);
 
 		$tools         = OpenclaWP_Tools_Resolver::for_agent( $agent );
-		$tool_executor = empty( $tools['name_to_ability'] ) ? null : new OpenclaWP_Tool_Executor( $tools['name_to_ability'] );
+		$has_tools     = ! empty( $tools['name_to_ability'] ) || ! empty( $tools['delegate_targets'] );
+		$tool_executor = $has_tools
+			? new OpenclaWP_Tool_Executor(
+				$tools['name_to_ability'],
+				$tools['delegate_targets'] ?? array()
+			)
+			: null;
 		$max_turns     = (int) ( ( $agent->get_default_config()['max_turns'] ?? 5 ) );
 
 		$turn_runner = self::build_turn_runner(
