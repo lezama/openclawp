@@ -188,9 +188,13 @@ final class OpenclaWP_Wacli_Process {
 	}
 
 	/**
-	 * Spawn `wacli sync --follow --webhook <URL> --webhook-secret <SECRET>
-	 * --events`, detached. Called after pairing succeeds; replaces the
-	 * auth process so a single wacli instance owns the session.
+	 * Spawn `wacli sync --follow --webhook <URL> --events`, detached.
+	 * Called after pairing succeeds; replaces the auth process so a single
+	 * wacli instance owns the session.
+	 *
+	 * The webhook HMAC secret is passed via the WACLI_WEBHOOK_SECRET
+	 * environment variable (never on the command line) so it does not
+	 * appear in /proc/<pid>/cmdline.
 	 *
 	 * `auth --follow` keeps the WhatsApp connection alive but does NOT
 	 * forward messages anywhere. `sync --follow --webhook ...` is what
@@ -233,14 +237,30 @@ final class OpenclaWP_Wacli_Process {
 			return new WP_Error( 'wacli_tempfile_failed', 'Could not create temp file for wacli sync events.' );
 		}
 
+		// Write the secret to a temp file (mode 0600) so it never appears in
+		// any process's argv. The shell reads it into WACLI_WEBHOOK_SECRET,
+		// deletes the file, then execs wacli — whose /proc/<pid>/environ is
+		// only readable by the owning UID (mode 0400), unlike cmdline (0444).
+		$secret_file = tempnam( sys_get_temp_dir(), 'wacli-secret-' );
+		if ( false === $secret_file ) {
+			return new WP_Error( 'wacli_tempfile_failed', 'Could not create temp file for wacli webhook secret.' );
+		}
+		file_put_contents( $secret_file, $secret );
+		chmod( $secret_file, 0600 );
+
+		// `--lock-wait 10s` lets the new sync wait briefly if a previous
+		// process is still releasing the store, instead of hard-failing.
+		// Shell variable-prefix syntax (VAR=val cmd) sets the env var for the
+		// child without it ever appearing in any process's argv. $(cat ...) is
+		// expanded by the parent shell internally, so the secret doesn't leak
+		// into sh's cmdline either. The temp file is deleted after expansion.
 		$cmd = sprintf(
-			// `--lock-wait 10s` lets the new sync wait briefly if a previous
-			// process is still releasing the store, instead of hard-failing.
-			'nohup %s --lock-wait 10s sync --follow --webhook %s --webhook-secret %s --events </dev/null >>%s 2>&1 & echo $!',
+			'WACLI_WEBHOOK_SECRET=$(cat %s) nohup %s --lock-wait 10s sync --follow --webhook %s --events </dev/null >>%s 2>&1 & echo $!; rm -f %s',
+			escapeshellarg( $secret_file ),
 			escapeshellarg( $binary ),
 			escapeshellarg( $url ),
-			escapeshellarg( $secret ),
-			escapeshellarg( $events_file )
+			escapeshellarg( $events_file ),
+			escapeshellarg( $secret_file )
 		);
 
 		$pid = (int) trim( (string) shell_exec( $cmd ) );

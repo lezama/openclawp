@@ -20,7 +20,11 @@ WP_CONTAINER=$(docker ps --format '{{.Names}}' \
 
 # Apache inside the container listens on port 80, so wacli reaches the
 # webhook via http://localhost/... not the host-side http://localhost:8888.
-exec docker exec -e WACLI_STORE_DIR=/var/lib/wacli "$WP_CONTAINER" \
+# Pass the secret via WACLI_WEBHOOK_SECRET env var instead of --webhook-secret
+# so it never appears in /proc/<pid>/cmdline.
+exec docker exec \
+	-e WACLI_STORE_DIR=/var/lib/wacli \
+	-e WACLI_WEBHOOK_SECRET="$SECRET" \
+	"$WP_CONTAINER" \
 	/usr/local/bin/wacli sync --follow \
-		--webhook http://localhost/wp-json/openclawp/v1/wacli/webhook \
-		--webhook-secret "$SECRET"
+		--webhook http://localhost/wp-json/openclawp/v1/wacli/webhook

@@ -2,7 +2,7 @@
 /**
  * WhatsApp transport for openclaWP via openclaw/wacli.
  *
- * `wacli sync --follow --webhook <REST URL> --webhook-secret <secret>` posts each
+ * `WACLI_WEBHOOK_SECRET=<secret> wacli sync --follow --webhook <REST URL>` posts each
  * incoming WhatsApp message as JSON to the REST endpoint registered here. We
  * verify the HMAC signature, forward the text to the configured agent through
  * the openclawp/chat ability, then reply by shelling out to `wacli send text`

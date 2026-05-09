@@ -40,11 +40,11 @@ final class OpenclaWP_Wacli_CLI {
 		\WP_CLI::log( '' );
 		\WP_CLI::log(
 			sprintf(
-				'  wacli sync --follow \\' . "\n" .
-				'    --webhook %s \\' . "\n" .
-				'    --webhook-secret %s',
-				escapeshellarg( $url ),
-				escapeshellarg( $secret )
+				'  WACLI_WEBHOOK_SECRET=%s \\' . "\n" .
+				'    wacli sync --follow \\' . "\n" .
+				'    --webhook %s',
+				escapeshellarg( $secret ),
+				escapeshellarg( $url )
 			)
 		);
 		\WP_CLI::log( '' );
