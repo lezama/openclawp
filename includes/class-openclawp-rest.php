@@ -5,8 +5,8 @@
  * Deliberately minimal: chat is the one verb worth a custom route. Listing
  * agents is server-rendered (the in-process registry is authoritative; an
  * extra network round-trip earns nothing). Listing/deleting sessions is
- * available via the standard WordPress REST API on the `openclawp_session`
- * post type — consumers query `/wp/v2/openclawp_session` directly.
+ * available via the REST API on the `openclawp_session` post type — consumers
+ * query `/wp/v2/openclawp-sessions` directly (authenticated, author-scoped).
  *
  * @package OpenclaWP
  */

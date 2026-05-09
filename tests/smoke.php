@@ -67,6 +67,10 @@ OpenclaWP_Smoke::check(
 	'CPT openclawp_session exposed via REST',
 	$cpt && true === $cpt->show_in_rest && 'openclawp-sessions' === $cpt->rest_base
 );
+OpenclaWP_Smoke::check(
+	'CPT openclawp_session uses auth-scoped REST controller',
+	$cpt && 'OpenclaWP_Session_Rest_Controller' === $cpt->rest_controller_class
+);
 
 $store      = OpenclaWP_Conversation_Store::instance();
 $workspace  = new \AgentsAPI\Core\Workspace\WP_Agent_Workspace_Scope( 'site', '1' );
