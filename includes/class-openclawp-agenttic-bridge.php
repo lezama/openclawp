@@ -51,13 +51,15 @@
  *
  * v0 scope:
  *   - `message/send` (returns the Task in a JSON envelope).
- *   - `message/stream` (returns the same Task as a single SSE event).
- *     The agenttic React hook (`useAgentChat`) hard-codes the stream
- *     transport, so we accept it but don't actually stream — we run
- *     `agents/chat` synchronously, then emit one `data: {…}\n\n` frame
- *     with the completed Task and close the connection. Token-by-token
- *     streaming and richer DataParts (tool-call, progress) land when
- *     there's a concrete UI need.
+ *   - `message/stream` (real SSE; one frame per loop event plus a final
+ *     Task envelope). We subscribe to canonical's `agents_api_loop_event`
+ *     action and openclaWP's `openclawp_chat_turn_completed` telemetry
+ *     event for the duration of the synchronous `agents/chat` call, write
+ *     each one as a `data: {…}\n\n` SSE frame, and close with the
+ *     completed Task envelope. Progress frames carry `result.kind =
+ *     "status-update"` so clients that only want the final result can
+ *     filter by `result.kind === undefined` (the terminal frame has no
+ *     `kind` — it's the same shape as the non-streaming `result`).
  *   - No `tasks/get`, no cancellation.
  *   - Single text part in / single text part out.
  *   - No artifacts. No tool-call surfacing in the response shape (tools
@@ -175,17 +177,31 @@ final class OpenclaWP_Agenttic_Bridge {
 			return self::error_response( $rpc_id, self::INTERNAL_ERROR, 'agents/chat ability is not registered.' );
 		}
 
-		$result = $chat->execute(
-			array(
-				'agent'      => $agent_slug,
-				'message'    => $text,
-				'session_id' => $session_id,
-			)
-		);
+		// Streaming opens the SSE response BEFORE invoking the chat ability
+		// so subscribed loop events can emit frames as the loop runs.
+		$listeners_attached = false;
+		if ( $is_streaming ) {
+			self::start_sse_response();
+			$listeners_attached = self::attach_streaming_listeners( $rpc_id, $task_id );
+		}
+
+		try {
+			$result = $chat->execute(
+				array(
+					'agent'      => $agent_slug,
+					'message'    => $text,
+					'session_id' => $session_id,
+				)
+			);
+		} finally {
+			if ( $listeners_attached ) {
+				self::detach_streaming_listeners();
+			}
+		}
 
 		if ( is_wp_error( $result ) ) {
 			if ( $is_streaming ) {
-				self::emit_sse_event(
+				self::emit_sse_frame(
 					array(
 						'jsonrpc' => '2.0',
 						'id'      => $rpc_id,
@@ -225,11 +241,7 @@ final class OpenclaWP_Agenttic_Bridge {
 		);
 
 		if ( $is_streaming ) {
-			// agenttic-client's `sendMessageStream` reads the body as SSE.
-			// We don't actually stream — we just package the completed
-			// Task into one event and close. That's enough for v0 since
-			// the canonical agents/chat call we proxied to is synchronous.
-			self::emit_sse_event(
+			self::emit_sse_frame(
 				array(
 					'jsonrpc' => '2.0',
 					'id'      => $rpc_id,
@@ -243,25 +255,94 @@ final class OpenclaWP_Agenttic_Bridge {
 	}
 
 	/**
-	 * Write the SSE preamble + a single `data:` frame and flush. Caller
-	 * is expected to `exit` immediately after — emitting more output
-	 * after this would be parsed by the client as additional SSE events.
+	 * Closures registered against loop events for the duration of one SSE
+	 * response. Held so we can detach cleanly in the `finally` block,
+	 * including when the chat ability throws.
 	 *
-	 * @param array<string,mixed> $payload JSON-RPC envelope to emit.
+	 * @var array<int, array{hook:string, callback:callable, priority:int}>
 	 */
-	private static function emit_sse_event( array $payload ): void {
-		// Headers must precede any output. Disable WP's nocache scrubbing
-		// of arbitrary headers by setting them ourselves.
+	private static array $streaming_listeners = array();
+
+	private static function attach_streaming_listeners( $rpc_id, string $task_id ): bool {
+		$loop_listener = static function ( string $event, array $payload = array() ) use ( $rpc_id, $task_id ): void {
+			self::emit_status_update_frame( $rpc_id, $task_id, 'loop:' . $event, $payload );
+		};
+		$telemetry_listener = static function ( array $telemetry ) use ( $rpc_id, $task_id ): void {
+			self::emit_status_update_frame( $rpc_id, $task_id, 'chat_turn_completed', $telemetry );
+		};
+
+		add_action( 'agents_api_loop_event', $loop_listener, 10, 2 );
+		add_action( 'openclawp_chat_turn_completed', $telemetry_listener, 10, 1 );
+
+		self::$streaming_listeners = array(
+			array( 'hook' => 'agents_api_loop_event',          'callback' => $loop_listener,      'priority' => 10 ),
+			array( 'hook' => 'openclawp_chat_turn_completed',  'callback' => $telemetry_listener, 'priority' => 10 ),
+		);
+
+		return true;
+	}
+
+	private static function detach_streaming_listeners(): void {
+		foreach ( self::$streaming_listeners as $listener ) {
+			remove_action( $listener['hook'], $listener['callback'], $listener['priority'] );
+		}
+		self::$streaming_listeners = array();
+	}
+
+	/**
+	 * Emit a progress frame mid-loop. Clients distinguish progress from the
+	 * terminal frame by checking `result.kind === 'status-update'` — the
+	 * terminal frame is a complete Task with `status.state === 'completed'`
+	 * and no `kind`.
+	 */
+	private static function emit_status_update_frame( $rpc_id, string $task_id, string $event, array $payload ): void {
+		self::emit_sse_frame(
+			array(
+				'jsonrpc' => '2.0',
+				'id'      => $rpc_id,
+				'result'  => array(
+					'kind'      => 'status-update',
+					'taskId'    => $task_id,
+					'event'     => $event,
+					'payload'   => $payload,
+					'timestamp' => gmdate( 'c' ),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Open the SSE response. Sends headers, disables PHP output buffering
+	 * and nginx response buffering, and idempotently no-ops if it's
+	 * already been called for this request.
+	 */
+	private static function start_sse_response(): void {
+		static $started = false;
+		if ( $started ) {
+			return;
+		}
+		$started = true;
+
 		nocache_headers();
 		header( 'Content-Type: text/event-stream; charset=utf-8' );
 		header( 'Cache-Control: no-cache, no-store' );
 		header( 'X-Accel-Buffering: no' ); // Disables nginx response buffering for live streams.
-		// Disable PHP output buffering / Apache deflate for the rest of
-		// the request so the single SSE frame reaches the client now,
-		// not at request shutdown.
+
+		// Disable PHP output buffering for the rest of the request so each
+		// frame reaches the client at flush() time, not request shutdown.
 		while ( ob_get_level() > 0 ) {
 			ob_end_flush();
 		}
+	}
+
+	/**
+	 * Write one SSE frame and flush. Safe to call repeatedly during a
+	 * single response — every call after the first reuses the open stream.
+	 *
+	 * @param array<string,mixed> $payload JSON-RPC envelope to emit.
+	 */
+	private static function emit_sse_frame( array $payload ): void {
+		self::start_sse_response();
 		echo 'data: ' . wp_json_encode( $payload ) . "\n\n";
 		flush();
 	}
