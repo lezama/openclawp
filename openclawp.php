@@ -10,7 +10,7 @@
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: openclawp
  * Requires PHP: 8.1
- * Requires at least: 7.0
+ * Requires at least: 6.7
  * Requires Plugins: agents-api
  *
  * @package OpenclaWP
