@@ -94,10 +94,13 @@ final class OpenclaWP_Whatsapp {
 			);
 		}
 
-		// Meta expects the challenge echoed back as plain text, not JSON.
-		$response = new WP_REST_Response( $challenge, 200 );
-		$response->header( 'Content-Type', 'text/plain' );
-		return $response;
+		// Meta expects the challenge echoed back as plain text without JSON
+		// quotes. Returning a string through the REST pipeline JSON-encodes it
+		// to `"42abc"`, which Meta rejects. Send the raw body and exit.
+		status_header( 200 );
+		header( 'Content-Type: text/plain; charset=utf-8' );
+		echo $challenge; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- value is the challenge token Meta sent us; bytes are returned verbatim.
+		exit;
 	}
 
 	/**
@@ -201,7 +204,25 @@ final class OpenclaWP_Whatsapp {
 
 		$session_id = self::resolve_session_for_phone( $phone, $user_id );
 
-		$result = OpenclaWP_Runner::run_turn( $agent_slug, $text, $session_id, $user_id );
+		$result = OpenclaWP_Runner::run_turn(
+			$agent_slug,
+			$text,
+			$session_id,
+			$user_id,
+			array(
+				'attachments'    => array(),
+				'client_context' => array(
+					'source'                   => 'channel',
+					'connector_id'             => 'whatsapp',
+					'client_name'              => 'whatsapp',
+					'external_provider'        => 'whatsapp',
+					'external_conversation_id' => $phone,
+					'external_message_id'      => (string) ( $message['id'] ?? '' ),
+					'sender_id'                => $phone,
+					'room_kind'                => 'dm',
+				),
+			)
+		);
 
 		if ( '' !== ( $message['id'] ?? '' ) ) {
 			self::mark_processed( $message['id'] );
