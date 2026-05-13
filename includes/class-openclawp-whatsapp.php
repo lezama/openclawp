@@ -165,6 +165,11 @@ final class OpenclaWP_Whatsapp {
 	 * Pull `messages[]` entries out of Meta's nested webhook envelope. Returns
 	 * a flat list of `[ phone, text, message_id ]` triples for text messages.
 	 *
+	 * Interactive replies (button taps, list selections) are surfaced through
+	 * the same `text` channel using the underlying reply id, so downstream
+	 * agents/preflights can match payload ids (e.g. `mantia:cmd:help`) with
+	 * the same logic they use for typed commands.
+	 *
 	 * @return array<int, array{phone:string,text:string,id:string}>
 	 */
 	public static function extract_messages( array $payload ): array {
@@ -176,14 +181,23 @@ final class OpenclaWP_Whatsapp {
 			foreach ( ( $entry['changes'] ?? array() ) as $change ) {
 				$value = $change['value'] ?? array();
 				foreach ( ( $value['messages'] ?? array() ) as $message ) {
-					$type = (string) ( $message['type'] ?? '' );
-					if ( 'text' !== $type ) {
-						// Non-text messages: skip for v1 (images, audio, etc).
-						continue;
-					}
+					$type  = (string) ( $message['type'] ?? '' );
 					$phone = (string) ( $message['from'] ?? '' );
-					$text  = (string) ( $message['text']['body'] ?? '' );
 					$id    = (string) ( $message['id'] ?? '' );
+					$text  = '';
+
+					if ( 'text' === $type ) {
+						$text = (string) ( $message['text']['body'] ?? '' );
+					} elseif ( 'interactive' === $type ) {
+						$interactive = isset( $message['interactive'] ) && is_array( $message['interactive'] ) ? $message['interactive'] : array();
+						$itype       = (string) ( $interactive['type'] ?? '' );
+						if ( 'button_reply' === $itype ) {
+							$text = (string) ( $interactive['button_reply']['id'] ?? '' );
+						} elseif ( 'list_reply' === $itype ) {
+							$text = (string) ( $interactive['list_reply']['id'] ?? '' );
+						}
+					}
+
 					if ( '' === $phone || '' === $text ) {
 						continue;
 					}
@@ -205,6 +219,15 @@ final class OpenclaWP_Whatsapp {
 		// Idempotency: skip if we've already processed this message id.
 		if ( '' !== $message['id'] && self::is_already_processed( $message['id'] ) ) {
 			return false;
+		}
+
+		// Inbound webhook arrives anonymous (no logged-in user). Promote to
+		// the configured WhatsApp user so ability `permission_callback`s and
+		// `current_user_can()` checks downstream see a real principal. This
+		// is the bot's "service identity" — the operator picks the WP user
+		// in openclaWP → WhatsApp settings.
+		if ( $user_id > 0 && get_current_user_id() !== $user_id ) {
+			wp_set_current_user( $user_id );
 		}
 
 		$session_id = self::resolve_session_for_phone( $phone, $user_id );
@@ -238,11 +261,15 @@ final class OpenclaWP_Whatsapp {
 			self::tag_session_with_phone( (string) $result['session_id'], $phone );
 		}
 
-		$reply = isset( $result['reply'] ) ? (string) $result['reply'] : '';
+		$reply       = isset( $result['reply'] ) ? (string) $result['reply'] : '';
+		$interactive = isset( $result['interactive'] ) && is_array( $result['interactive'] ) ? $result['interactive'] : null;
+
+		if ( null !== $interactive ) {
+			return self::send_interactive_message( $phone, $reply, $interactive, $settings );
+		}
 		if ( '' === $reply ) {
 			return false;
 		}
-
 		return self::send_text_message( $phone, $reply, $settings );
 	}
 
@@ -342,17 +369,218 @@ final class OpenclaWP_Whatsapp {
 		);
 
 		if ( is_wp_error( $response ) ) {
-			error_log( '[openclawp] whatsapp_send_failed err=' . $response->get_error_message() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			error_log( '[openclawp] whatsapp_send_failed err=' . self::redact_secrets( $response->get_error_message() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return false;
 		}
 
 		$code = (int) wp_remote_retrieve_response_code( $response );
 		if ( $code < 200 || $code >= 300 ) {
-			error_log( '[openclawp] whatsapp_send_failed status=' . $code . ' body=' . wp_remote_retrieve_body( $response ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			error_log( '[openclawp] whatsapp_send_failed status=' . $code . ' body=' . self::redact_secrets( wp_remote_retrieve_body( $response ) ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return false;
 		}
 
 		return true;
+	}
+
+	/**
+	 * Replace common secret-shaped substrings with `[redacted]` for safe
+	 * logging. Aimed at the obvious shapes we know flow through this plugin:
+	 * Bearer headers, Meta Graph access tokens (EAA…), Anthropic keys
+	 * (sk-ant-…), and any `access_token`/`api_key` JSON values.
+	 */
+	public static function redact_secrets( string $text ): string {
+		$patterns = array(
+			'/(Bearer\s+)[A-Za-z0-9_\-\.]{8,}/i',
+			'/\bEAA[A-Za-z0-9_\-]{20,}\b/',
+			'/\bsk-ant-[A-Za-z0-9_\-]{16,}\b/',
+			'/("access_token"\s*:\s*")[^"]+(")/',
+			'/("api_key"\s*:\s*")[^"]+(")/',
+			'/("token"\s*:\s*")[^"]+(")/',
+		);
+		$replacements = array(
+			'$1[redacted]',
+			'[redacted]',
+			'[redacted]',
+			'$1[redacted]$2',
+			'$1[redacted]$2',
+			'$1[redacted]$2',
+		);
+		return (string) preg_replace( $patterns, $replacements, $text );
+	}
+
+	/**
+	 * Send a WhatsApp Cloud API interactive message.
+	 *
+	 * Accepts a normalized $interactive payload shaped by the caller and
+	 * builds the Meta-compliant body. Two shapes supported today:
+	 *
+	 *   type: 'button' — up to 3 quick reply buttons
+	 *     {
+	 *       'type'    => 'button',
+	 *       'header'  => optional string,
+	 *       'footer'  => optional string,
+	 *       'buttons' => [ ['id' => '...', 'title' => '...'], ... ]
+	 *     }
+	 *
+	 *   type: 'list' — up to 10 selectable rows across sections
+	 *     {
+	 *       'type'         => 'list',
+	 *       'header'       => optional string,
+	 *       'footer'       => optional string,
+	 *       'button_label' => 'Elegir' (default),
+	 *       'sections'     => [ [ 'title' => '...', 'rows' => [ ['id'=>'','title'=>'','description'=>''], ... ] ], ... ]
+	 *     }
+	 *
+	 * $body_text is the message body shown above the buttons / list.
+	 * Inbound replies (button/list selection) surface as their `id` in
+	 * extract_messages(), so callers can route them through their existing
+	 * command dispatcher.
+	 */
+	public static function send_interactive_message( string $to_phone, string $body_text, array $interactive, array $settings = array() ): bool {
+		if ( empty( $settings ) ) {
+			$settings = self::settings();
+		}
+		$phone_number_id = $settings['phone_number_id'];
+		$access_token    = $settings['access_token'];
+		$api_version     = $settings['api_version'] ?: self::DEFAULT_API_VERSION;
+
+		if ( '' === $phone_number_id || '' === $access_token ) {
+			return false;
+		}
+
+		$built = self::build_interactive_payload( $body_text, $interactive );
+		if ( null === $built ) {
+			// Fall back to a plain text send if the payload couldn't be shaped.
+			return '' !== $body_text && self::send_text_message( $to_phone, $body_text, $settings );
+		}
+
+		$url = sprintf( 'https://graph.facebook.com/%s/%s/messages', rawurlencode( $api_version ), rawurlencode( $phone_number_id ) );
+
+		$response = wp_remote_post(
+			$url,
+			array(
+				'timeout' => 20,
+				'headers' => array(
+					'Authorization' => 'Bearer ' . $access_token,
+					'Content-Type'  => 'application/json',
+				),
+				'body'    => wp_json_encode(
+					array(
+						'messaging_product' => 'whatsapp',
+						'recipient_type'    => 'individual',
+						'to'                => $to_phone,
+						'type'              => 'interactive',
+						'interactive'       => $built,
+					)
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			error_log( '[openclawp] whatsapp_interactive_send_failed err=' . self::redact_secrets( $response->get_error_message() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			return false;
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		if ( $code < 200 || $code >= 300 ) {
+			error_log( '[openclawp] whatsapp_interactive_send_failed status=' . $code . ' body=' . self::redact_secrets( wp_remote_retrieve_body( $response ) ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			// Soft fallback to text so the user at least sees the message body.
+			return '' !== $body_text && self::send_text_message( $to_phone, $body_text, $settings );
+		}
+
+		return true;
+	}
+
+	private static function build_interactive_payload( string $body_text, array $interactive ): ?array {
+		$type = (string) ( $interactive['type'] ?? '' );
+		$body = '' !== $body_text ? array( 'text' => self::truncate( $body_text, 1024 ) ) : array( 'text' => ' ' );
+
+		if ( 'button' === $type ) {
+			$buttons_in = isset( $interactive['buttons'] ) && is_array( $interactive['buttons'] ) ? $interactive['buttons'] : array();
+			$buttons    = array();
+			foreach ( array_slice( $buttons_in, 0, 3 ) as $btn ) {
+				$id    = (string) ( $btn['id'] ?? '' );
+				$title = self::truncate( (string) ( $btn['title'] ?? '' ), 20 );
+				if ( '' === $id || '' === $title ) {
+					continue;
+				}
+				$buttons[] = array(
+					'type'  => 'reply',
+					'reply' => array( 'id' => $id, 'title' => $title ),
+				);
+			}
+			if ( empty( $buttons ) ) {
+				return null;
+			}
+			$payload = array(
+				'type'   => 'button',
+				'body'   => $body,
+				'action' => array( 'buttons' => $buttons ),
+			);
+			if ( ! empty( $interactive['header'] ) ) {
+				$payload['header'] = array( 'type' => 'text', 'text' => self::truncate( (string) $interactive['header'], 60 ) );
+			}
+			if ( ! empty( $interactive['footer'] ) ) {
+				$payload['footer'] = array( 'text' => self::truncate( (string) $interactive['footer'], 60 ) );
+			}
+			return $payload;
+		}
+
+		if ( 'list' === $type ) {
+			$sections_in = isset( $interactive['sections'] ) && is_array( $interactive['sections'] ) ? $interactive['sections'] : array();
+			$sections    = array();
+			foreach ( $sections_in as $section ) {
+				$rows_in = isset( $section['rows'] ) && is_array( $section['rows'] ) ? $section['rows'] : array();
+				$rows    = array();
+				foreach ( $rows_in as $row ) {
+					$id    = (string) ( $row['id'] ?? '' );
+					$title = self::truncate( (string) ( $row['title'] ?? '' ), 24 );
+					if ( '' === $id || '' === $title ) {
+						continue;
+					}
+					$entry = array( 'id' => $id, 'title' => $title );
+					if ( ! empty( $row['description'] ) ) {
+						$entry['description'] = self::truncate( (string) $row['description'], 72 );
+					}
+					$rows[] = $entry;
+				}
+				if ( empty( $rows ) ) {
+					continue;
+				}
+				$sections[] = array(
+					'title' => self::truncate( (string) ( $section['title'] ?? 'Opciones' ), 24 ),
+					'rows'  => $rows,
+				);
+			}
+			if ( empty( $sections ) ) {
+				return null;
+			}
+			$payload = array(
+				'type'   => 'list',
+				'body'   => $body,
+				'action' => array(
+					'button'   => self::truncate( (string) ( $interactive['button_label'] ?? 'Elegir' ), 20 ),
+					'sections' => $sections,
+				),
+			);
+			if ( ! empty( $interactive['header'] ) ) {
+				$payload['header'] = array( 'type' => 'text', 'text' => self::truncate( (string) $interactive['header'], 60 ) );
+			}
+			if ( ! empty( $interactive['footer'] ) ) {
+				$payload['footer'] = array( 'text' => self::truncate( (string) $interactive['footer'], 60 ) );
+			}
+			return $payload;
+		}
+
+		return null;
+	}
+
+	private static function truncate( string $text, int $max ): string {
+		$text = trim( $text );
+		if ( function_exists( 'mb_strimwidth' ) ) {
+			return mb_strimwidth( $text, 0, $max, '', 'UTF-8' );
+		}
+		return strlen( $text ) > $max ? substr( $text, 0, $max ) : $text;
 	}
 
 	/* ------------------------------ Settings ------------------------------ */
@@ -441,7 +669,7 @@ final class OpenclaWP_Whatsapp {
 						<tr>
 							<th scope="row"><label for="openclawp-wa-verify-token"><?php esc_html_e( 'Webhook Verify Token', 'openclawp' ); ?></label></th>
 							<td>
-								<input type="text" id="openclawp-wa-verify-token" class="regular-text" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[webhook_verify_token]" value="<?php echo esc_attr( $settings['webhook_verify_token'] ); ?>" autocomplete="off">
+								<input type="password" id="openclawp-wa-verify-token" class="regular-text" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[webhook_verify_token]" value="<?php echo esc_attr( $settings['webhook_verify_token'] ); ?>" autocomplete="new-password">
 								<p class="description"><?php esc_html_e( 'Free-form string you also paste into Meta\'s webhook setup form.', 'openclawp' ); ?></p>
 							</td>
 						</tr>
