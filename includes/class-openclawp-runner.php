@@ -25,10 +25,11 @@ final class OpenclaWP_Runner {
 	 * @param string      $message      Latest user message.
 	 * @param string|null $session_id   Existing session UUID, or null to create one.
 	 * @param int         $user_id      WP user ID owning the session.
+	 * @param array       $runtime_context Channel/runtime context for tool calls.
 	 *
 	 * @return array{session_id:string,reply:string,completed:bool,messages:array,error?:string}
 	 */
-	public static function run_turn( string $agent_slug, string $message, ?string $session_id, int $user_id ): array {
+	public static function run_turn( string $agent_slug, string $message, ?string $session_id, int $user_id, array $runtime_context = array() ): array {
 		$agent = wp_get_agent( $agent_slug );
 		if ( null === $agent ) {
 			return array(
@@ -48,7 +49,7 @@ final class OpenclaWP_Runner {
 				$workspace,
 				$user_id,
 				$agent_slug,
-				array(),
+				self::session_metadata_from_runtime_context( $runtime_context ),
 				'chat'
 			);
 			if ( '' === $session_id ) {
@@ -73,6 +74,53 @@ final class OpenclaWP_Runner {
 			);
 		}
 
+		$preflight = apply_filters(
+			'openclawp_pre_chat_turn',
+			null,
+			array(
+				'agent_slug'      => $agent_slug,
+				'message'         => $message,
+				'session_id'      => $session_id,
+				'user_id'         => $user_id,
+				'runtime_context' => $runtime_context,
+				'session'         => $session,
+			)
+		);
+		if ( is_wp_error( $preflight ) ) {
+			return array(
+				'session_id' => $session_id,
+				'reply'      => '',
+				'completed'  => true,
+				'messages'   => $session['messages'],
+				'error'      => $preflight->get_error_message(),
+			);
+		}
+		if ( is_array( $preflight ) ) {
+			$reply          = (string) ( $preflight['reply'] ?? '' );
+			$final_messages = isset( $preflight['messages'] ) && is_array( $preflight['messages'] )
+				? $preflight['messages']
+				: self::append_preflight_messages( $session['messages'], $message, $reply );
+
+			$store->update_session( $session_id, $final_messages );
+
+			$result = array(
+				'session_id' => $session_id,
+				'reply'      => $reply,
+				'completed'  => (bool) ( $preflight['completed'] ?? true ),
+				'messages'   => $final_messages,
+			);
+
+			// Pass-through channel-specific payloads (e.g. WhatsApp interactive
+			// buttons / lists) so the caller's transport layer can act on them.
+			foreach ( array( 'interactive', 'attachments', 'metadata' ) as $passthrough_key ) {
+				if ( isset( $preflight[ $passthrough_key ] ) ) {
+					$result[ $passthrough_key ] = $preflight[ $passthrough_key ];
+				}
+			}
+
+			return $result;
+		}
+
 		$messages   = $session['messages'];
 		$messages[] = array(
 			'role'    => 'user',
@@ -84,7 +132,8 @@ final class OpenclaWP_Runner {
 		$tool_executor = $has_tools
 			? new OpenclaWP_Tool_Executor(
 				$tools['name_to_ability'],
-				$tools['delegate_targets'] ?? array()
+				$tools['delegate_targets'] ?? array(),
+				$runtime_context
 			)
 			: null;
 		$max_turns     = (int) ( ( $agent->get_default_config()['max_turns'] ?? 5 ) );
@@ -110,6 +159,7 @@ final class OpenclaWP_Runner {
 			// PR #97), so we don't need to override it.
 			$loop_options['tool_executor']     = $tool_executor;
 			$loop_options['tool_declarations'] = $tools['declarations'];
+			$loop_options['context']           = self::tool_context_from_runtime_context( $runtime_context );
 		}
 
 		$result = WP_Agent_Conversation_Loop::run( $messages, $turn_runner, $loop_options );
@@ -128,6 +178,47 @@ final class OpenclaWP_Runner {
 			'completed'  => true,
 			'messages'   => $final_messages,
 		);
+	}
+
+	private static function session_metadata_from_runtime_context( array $runtime_context ): array {
+		$client_context = isset( $runtime_context['client_context'] ) && is_array( $runtime_context['client_context'] )
+			? $runtime_context['client_context']
+			: array();
+
+		return empty( $client_context ) ? array() : array( 'client_context' => $client_context );
+	}
+
+	private static function tool_context_from_runtime_context( array $runtime_context ): array {
+		$client_context = isset( $runtime_context['client_context'] ) && is_array( $runtime_context['client_context'] )
+			? $runtime_context['client_context']
+			: array();
+		$sender_id      = (string) ( $client_context['sender_id'] ?? $client_context['external_conversation_id'] ?? '' );
+
+		$context = array(
+			'client_context' => $client_context,
+		);
+		if ( '' !== $sender_id ) {
+			$context['user_phone']         = $sender_id;
+			$context['whatsapp_recipient'] = $sender_id;
+		}
+
+		return (array) apply_filters( 'openclawp_tool_runtime_context', $context, $runtime_context );
+	}
+
+	private static function append_preflight_messages( array $messages, string $message, string $reply ): array {
+		$messages[] = array(
+			'role'    => 'user',
+			'content' => $message,
+		);
+
+		if ( '' !== $reply ) {
+			$messages[] = array(
+				'role'    => 'assistant',
+				'content' => $reply,
+			);
+		}
+
+		return $messages;
 	}
 
 	/**

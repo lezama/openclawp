@@ -44,11 +44,8 @@ final class OpenclaWP_Canonical_Chat_Handler {
 	/**
 	 * Translate the canonical input into an `openclawp/chat` ability call.
 	 *
-	 * Explicit subset projection: openclawp/chat reads `agent`, `message`,
-	 * and `session_id`. We intentionally do NOT pass `attachments` or
-	 * `client_context` — the existing runner ignores them today, and a
-	 * future strictly-validating revision of openclawp/chat would reject
-	 * unknown keys. Plumb them through here when the runner adds support.
+	 * Explicit projection keeps the canonical chat contract intact while
+	 * letting the runner expose channel context to tool calls.
 	 *
 	 * @param array $input Canonical agents/chat input (per agents-api#100).
 	 * @return array|WP_Error Canonical agents/chat output, or error.
@@ -71,8 +68,8 @@ final class OpenclaWP_Canonical_Chat_Handler {
 				'agent'      => (string) ( $input['agent'] ?? '' ),
 				'message'    => (string) ( $input['message'] ?? '' ),
 				'session_id' => $input['session_id'] ?? null,
-				// `attachments` and `client_context` are part of the canonical
-				// contract but unused by openclawp/chat today. See note above.
+				'attachments'    => isset( $input['attachments'] ) && is_array( $input['attachments'] ) ? $input['attachments'] : array(),
+				'client_context' => isset( $input['client_context'] ) && is_array( $input['client_context'] ) ? $input['client_context'] : array(),
 			)
 		);
 	}

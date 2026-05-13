@@ -139,6 +139,52 @@ if ( $auto_agent ) {
 	OpenclaWP_Smoke::check( 'auto config resolves to null preference', null === $pref );
 }
 
+add_action(
+	'wp_agents_api_init',
+	static function () {
+		wp_register_agent(
+			'openclawp-smoke-preflight',
+			array(
+				'label'          => 'Smoke preflight',
+				'description'    => 'Smoke test for deterministic pre-turn handling.',
+				'default_config' => array( 'provider' => 'auto', 'model' => 'auto' ),
+			)
+		);
+	},
+	70
+);
+do_action( 'wp_agents_api_init' );
+
+$preflight_filter = static function ( $preflight, array $turn ) {
+	if ( 'openclawp-smoke-preflight' !== ( $turn['agent_slug'] ?? '' ) ) {
+		return $preflight;
+	}
+
+	return array(
+		'reply'     => 'preflight-ok:' . ( $turn['runtime_context']['client_context']['sender_id'] ?? '' ),
+		'completed' => true,
+	);
+};
+add_filter( 'openclawp_pre_chat_turn', $preflight_filter, 10, 2 );
+$preflight_run = OpenclaWP_Runner::run_turn(
+	'openclawp-smoke-preflight',
+	'JOINME',
+	null,
+	1,
+	array( 'client_context' => array( 'sender_id' => '15555550100' ) )
+);
+remove_filter( 'openclawp_pre_chat_turn', $preflight_filter, 10 );
+
+OpenclaWP_Smoke::check(
+	'pre-chat turn filter can short-circuit model calls',
+	'preflight-ok:15555550100' === ( $preflight_run['reply'] ?? '' ),
+	is_array( $preflight_run ) ? json_encode( $preflight_run ) : 'not-an-array'
+);
+OpenclaWP_Smoke::check(
+	'pre-chat turn filter records transcript messages',
+	isset( $preflight_run['messages'] ) && 2 === count( $preflight_run['messages'] )
+);
+
 // Workflow primitives — substrate dispatcher + openclaWP runtime adapter.
 if ( class_exists( 'AgentsAPI\\AI\\Workflows\\WP_Agent_Workflow_Runner' ) ) {
 	OpenclaWP_Smoke::check(
