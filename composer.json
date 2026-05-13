@@ -11,6 +11,9 @@
   "require-dev": {
     "phpunit/phpunit": "^9.6"
   },
+  "suggest": {
+    "wordpress/php-ai-client": "Required only on WordPress < 7.0. WP 7.0+ ships the AI Client in core (wp-includes/php-ai-client); including a second copy here causes namespace conflicts with bundled-and-prefixed deps."
+  },
   "repositories": [
     {
       "type": "vcs",

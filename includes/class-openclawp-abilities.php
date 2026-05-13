@@ -171,6 +171,15 @@ final class OpenclaWP_Abilities {
 							'type'        => array( 'string', 'null' ),
 							'description' => 'Existing openclaWP session UUID, or null/omitted to start a new session.',
 						),
+						'attachments' => array(
+							'type'        => 'array',
+							'description' => 'Channel-side attachments from the canonical agents/chat payload.',
+							'default'     => array(),
+						),
+						'client_context' => array(
+							'type'        => 'object',
+							'description' => 'Transport-level context from the canonical agents/chat payload.',
+						),
 					),
 					'required'   => array( 'agent', 'message' ),
 				),
@@ -211,7 +220,11 @@ final class OpenclaWP_Abilities {
 						$agent,
 						$message,
 						$session_id,
-						get_current_user_id()
+						get_current_user_id(),
+						array(
+							'attachments'    => isset( $args['attachments'] ) && is_array( $args['attachments'] ) ? $args['attachments'] : array(),
+							'client_context' => isset( $args['client_context'] ) && is_array( $args['client_context'] ) ? $args['client_context'] : array(),
+						)
 					);
 
 					if ( ! empty( $result['error'] ) ) {
