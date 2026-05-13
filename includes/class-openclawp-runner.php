@@ -103,12 +103,22 @@ final class OpenclaWP_Runner {
 
 			$store->update_session( $session_id, $final_messages );
 
-			return array(
+			$result = array(
 				'session_id' => $session_id,
 				'reply'      => $reply,
 				'completed'  => (bool) ( $preflight['completed'] ?? true ),
 				'messages'   => $final_messages,
 			);
+
+			// Pass-through channel-specific payloads (e.g. WhatsApp interactive
+			// buttons / lists) so the caller's transport layer can act on them.
+			foreach ( array( 'interactive', 'attachments', 'metadata' ) as $passthrough_key ) {
+				if ( isset( $preflight[ $passthrough_key ] ) ) {
+					$result[ $passthrough_key ] = $preflight[ $passthrough_key ];
+				}
+			}
+
+			return $result;
 		}
 
 		$messages   = $session['messages'];
