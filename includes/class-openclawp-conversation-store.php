@@ -122,6 +122,69 @@ final class OpenclaWP_Conversation_Store implements WP_Agent_Conversation_Store,
 		return $session_id;
 	}
 
+	public function list_sessions(
+		WP_Agent_Workspace_Scope $workspace,
+		int $user_id,
+		array $args = array()
+	): array {
+		$limit            = isset( $args['limit'] ) ? max( 1, (int) $args['limit'] ) : 50;
+		$offset           = isset( $args['offset'] ) ? max( 0, (int) $args['offset'] ) : 0;
+		$include_messages = ! empty( $args['include_messages'] );
+
+		$meta_query = array(
+			'relation' => 'AND',
+			array(
+				'key'   => self::META_WORKSPACE_TYPE,
+				'value' => $workspace->workspace_type,
+			),
+			array(
+				'key'   => self::META_WORKSPACE_ID,
+				'value' => $workspace->workspace_id,
+			),
+		);
+
+		if ( isset( $args['agent_slug'] ) && '' !== $args['agent_slug'] ) {
+			$meta_query[] = array(
+				'key'   => self::META_AGENT_SLUG,
+				'value' => (string) $args['agent_slug'],
+			);
+		}
+
+		if ( isset( $args['context'] ) && '' !== $args['context'] ) {
+			$meta_query[] = array(
+				'key'   => self::META_CONTEXT,
+				'value' => (string) $args['context'],
+			);
+		}
+
+		$query = new WP_Query(
+			array(
+				'post_type'              => self::POST_TYPE,
+				'post_status'            => 'any',
+				'author'                 => $user_id,
+				'posts_per_page'         => $limit,
+				'offset'                 => $offset,
+				'orderby'                => 'date',
+				'order'                  => 'DESC',
+				'meta_query'             => $meta_query,
+				'no_found_rows'          => true,
+				'update_post_term_cache' => false,
+				'suppress_filters'       => true,
+			)
+		);
+
+		$sessions = array();
+		foreach ( $query->posts as $post ) {
+			$session = $this->session_array( $post );
+			if ( ! $include_messages ) {
+				unset( $session['messages'] );
+			}
+			$sessions[] = $session;
+		}
+
+		return $sessions;
+	}
+
 	public function get_session( string $session_id ): ?array {
 		$post = $this->find_post_by_session_id( $session_id );
 		if ( null === $post ) {
