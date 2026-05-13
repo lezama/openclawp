@@ -101,6 +101,11 @@ final class OpenclaWP_Wacli_Channel extends WP_Agent_Channel {
 		return 'dm';
 	}
 
+	protected function extract_sender_id( array $data ): ?string {
+		$sender = (string) ( $data['sender_jid'] ?? $data['SenderJID'] ?? '' );
+		return '' !== $sender ? $sender : null;
+	}
+
 	// ─── Lifecycle: silent loop-prevention and allowlist ──────────────
 
 	protected function validate( array $data ): ?\WP_Error {
