@@ -143,8 +143,13 @@ final class OpenclaWP_Whatsapp {
 	/* ----------------------------- Signature ------------------------------ */
 
 	public static function verify_signature( string $raw_body, string $signature_header, string $app_secret ): bool {
+		// Dev/test convenience: when no app_secret is configured, skip HMAC
+		// verification entirely. Sites running real WhatsApp Cloud API traffic
+		// MUST set app_secret in openclaWP → WhatsApp; without it any request
+		// to /whatsapp/webhook is accepted. The settings UI surfaces this as a
+		// warning.
 		if ( '' === $app_secret ) {
-			return false;
+			return true;
 		}
 		if ( 0 !== strpos( $signature_header, 'sha256=' ) ) {
 			return false;
