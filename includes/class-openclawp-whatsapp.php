@@ -28,6 +28,37 @@ final class OpenclaWP_Whatsapp {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 		add_action( 'admin_menu', array( __CLASS__, 'register_settings_menu' ), 20 );
 		add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
+		add_action( 'admin_notices', array( __CLASS__, 'maybe_render_missing_app_secret_notice' ) );
+	}
+
+	/**
+	 * Warn admins when the WhatsApp channel has live credentials but no
+	 * app_secret. In that state {@see verify_signature()} accepts any inbound
+	 * request — fine for local dev but unsafe in production, since anyone who
+	 * guesses the webhook URL can drive the agent.
+	 */
+	public static function maybe_render_missing_app_secret_notice(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		$settings = self::settings();
+		$configured = '' !== trim( (string) $settings['access_token'] )
+			|| '' !== trim( (string) $settings['phone_number_id'] );
+		if ( ! $configured ) {
+			return;
+		}
+		if ( '' !== trim( (string) $settings['app_secret'] ) ) {
+			return;
+		}
+
+		printf(
+			'<div class="notice notice-warning"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
+			esc_html__( 'openclaWP WhatsApp:', 'openclawp' ),
+			esc_html__( 'Your WhatsApp Cloud API credentials are configured but the App Secret is empty. Inbound webhook requests are accepted without HMAC verification — anyone who finds the webhook URL can post messages to the configured agent. Set the Meta app secret to enable signature verification.', 'openclawp' ),
+			esc_url( admin_url( 'admin.php?page=openclawp-whatsapp' ) ),
+			esc_html__( 'Open WhatsApp settings', 'openclawp' )
+		);
 	}
 
 	public static function settings(): array {
