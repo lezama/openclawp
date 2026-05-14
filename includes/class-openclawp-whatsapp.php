@@ -165,6 +165,11 @@ final class OpenclaWP_Whatsapp {
 
 		$processed = 0;
 		foreach ( $messages as $message ) {
+			$type = (string) ( $message['type'] ?? 'text' );
+			if ( 'image' === $type ) {
+				$processed += self::dispatch_image( $message, $user_id, $settings ) ? 1 : 0;
+				continue;
+			}
 			$processed += self::dispatch( $message, $agent_slug, $user_id, $settings ) ? 1 : 0;
 		}
 
@@ -194,14 +199,16 @@ final class OpenclaWP_Whatsapp {
 
 	/**
 	 * Pull `messages[]` entries out of Meta's nested webhook envelope. Returns
-	 * a flat list of `[ phone, text, message_id ]` triples for text messages.
+	 * tagged entries so the caller can dispatch each by type:
 	 *
-	 * Interactive replies (button taps, list selections) are surfaced through
-	 * the same `text` channel using the underlying reply id, so downstream
-	 * agents/preflights can match payload ids (e.g. `mantia:cmd:help`) with
-	 * the same logic they use for typed commands.
+	 * - text — typed messages + button/list reply payloads (id surfaces in `text`)
+	 * - image — image attachments, with media_id + mime_type + optional caption
 	 *
-	 * @return array<int, array{phone:string,text:string,id:string}>
+	 * Other message types (audio, video, document, location, sticker) currently
+	 * pass through as ack-only — consumers can extend by adding their own branch
+	 * here or filtering openclawp_extract_messages.
+	 *
+	 * @return array<int, array{type:string,phone:string,id:string,text?:string,media_id?:string,mime_type?:string,caption?:string}>
 	 */
 	public static function extract_messages( array $payload ): array {
 		$out = array();
@@ -215,24 +222,40 @@ final class OpenclaWP_Whatsapp {
 					$type  = (string) ( $message['type'] ?? '' );
 					$phone = (string) ( $message['from'] ?? '' );
 					$id    = (string) ( $message['id'] ?? '' );
-					$text  = '';
+					if ( '' === $phone ) {
+						continue;
+					}
 
 					if ( 'text' === $type ) {
-						$text = (string) ( $message['text']['body'] ?? '' );
+						$body = (string) ( $message['text']['body'] ?? '' );
+						if ( '' === $body ) {
+							continue;
+						}
+						$out[] = array( 'type' => 'text', 'phone' => $phone, 'text' => $body, 'id' => $id );
 					} elseif ( 'interactive' === $type ) {
 						$interactive = isset( $message['interactive'] ) && is_array( $message['interactive'] ) ? $message['interactive'] : array();
 						$itype       = (string) ( $interactive['type'] ?? '' );
-						if ( 'button_reply' === $itype ) {
-							$text = (string) ( $interactive['button_reply']['id'] ?? '' );
-						} elseif ( 'list_reply' === $itype ) {
-							$text = (string) ( $interactive['list_reply']['id'] ?? '' );
+						$reply_id    = 'button_reply' === $itype
+							? (string) ( $interactive['button_reply']['id'] ?? '' )
+							: ( 'list_reply' === $itype ? (string) ( $interactive['list_reply']['id'] ?? '' ) : '' );
+						if ( '' === $reply_id ) {
+							continue;
 						}
+						$out[] = array( 'type' => 'text', 'phone' => $phone, 'text' => $reply_id, 'id' => $id );
+					} elseif ( 'image' === $type ) {
+						$img = isset( $message['image'] ) && is_array( $message['image'] ) ? $message['image'] : array();
+						if ( empty( $img['id'] ) ) {
+							continue;
+						}
+						$out[] = array(
+							'type'      => 'image',
+							'phone'     => $phone,
+							'id'        => $id,
+							'media_id'  => (string) $img['id'],
+							'mime_type' => (string) ( $img['mime_type'] ?? '' ),
+							'caption'   => (string) ( $img['caption'] ?? '' ),
+						);
 					}
-
-					if ( '' === $phone || '' === $text ) {
-						continue;
-					}
-					$out[] = array( 'phone' => $phone, 'text' => $text, 'id' => $id );
 				}
 			}
 		}
@@ -349,6 +372,62 @@ final class OpenclaWP_Whatsapp {
 			return;
 		}
 		update_post_meta( $query->posts[0]->ID, self::META_PHONE_KEY, $phone );
+	}
+
+	/**
+	 * Dispatch an inbound image. We don't route images through the agent
+	 * turn loop — they're side-channel events that consumers (e.g. a
+	 * plugin storing the photo as a user avatar) hook into via the
+	 * `openclawp_image_message_received` action. The action payload
+	 * carries enough context to fetch the bytes from Meta's media URL
+	 * without re-implementing the auth dance.
+	 */
+	private static function dispatch_image( array $message, int $user_id, array $settings ): bool {
+		$phone    = (string) ( $message['phone'] ?? '' );
+		$media_id = (string) ( $message['media_id'] ?? '' );
+		if ( '' === $phone || '' === $media_id ) {
+			return false;
+		}
+		if ( '' !== ( $message['id'] ?? '' ) && self::is_already_processed( (string) $message['id'] ) ) {
+			return false;
+		}
+
+		// Promote to the configured service user so action handlers run
+		// under a real principal (e.g. media_handle_sideload needs caps).
+		if ( $user_id > 0 && get_current_user_id() !== $user_id ) {
+			wp_set_current_user( $user_id );
+		}
+
+		/**
+		 * Fires when an image lands at the webhook.
+		 *
+		 * @param array $payload {
+		 *   @type string $phone        Sender E.164 (digits only)
+		 *   @type string $media_id     Meta media ID — fetch URL from /v25.0/{id}
+		 *   @type string $mime_type    image/jpeg, image/png, etc.
+		 *   @type string $caption      Optional user caption
+		 *   @type string $message_id   Webhook message id (already idempotency-checked)
+		 *   @type string $access_token Bearer for both the metadata + binary fetch
+		 *   @type string $api_version  Graph API version configured in settings
+		 * }
+		 */
+		do_action(
+			'openclawp_image_message_received',
+			array(
+				'phone'        => $phone,
+				'media_id'     => $media_id,
+				'mime_type'    => (string) ( $message['mime_type'] ?? '' ),
+				'caption'      => (string) ( $message['caption'] ?? '' ),
+				'message_id'   => (string) ( $message['id'] ?? '' ),
+				'access_token' => (string) ( $settings['access_token'] ?? '' ),
+				'api_version'  => (string) ( $settings['api_version'] ?? self::DEFAULT_API_VERSION ),
+			)
+		);
+
+		if ( '' !== ( $message['id'] ?? '' ) ) {
+			self::mark_processed( (string) $message['id'] );
+		}
+		return true;
 	}
 
 	/* ----------------------------- Idempotency ---------------------------- */
