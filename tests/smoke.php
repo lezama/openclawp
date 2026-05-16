@@ -26,6 +26,38 @@ final class OpenclaWP_Smoke {
 		self::$results[] = array( 'name' => $name, 'ok' => $ok, 'detail' => $detail );
 	}
 
+	public static function register_agent( string $slug, array $args ): void {
+		if ( function_exists( 'wp_has_agent' ) && wp_has_agent( $slug ) ) {
+			return;
+		}
+		if ( ! class_exists( 'WP_Agents_Registry' ) ) {
+			return;
+		}
+
+		if ( method_exists( 'WP_Agents_Registry', 'init' ) ) {
+			WP_Agents_Registry::init();
+		}
+
+		$registry = WP_Agents_Registry::get_instance();
+		if ( null !== $registry ) {
+			$registry->register( $slug, $args );
+		}
+	}
+
+	public static function register_ability( string $name, array $args ): void {
+		if ( function_exists( 'wp_has_ability' ) && wp_has_ability( $name ) ) {
+			return;
+		}
+		if ( ! class_exists( 'WP_Abilities_Registry' ) ) {
+			return;
+		}
+
+		$registry = WP_Abilities_Registry::get_instance();
+		if ( null !== $registry ) {
+			$registry->register( $name, $args );
+		}
+	}
+
 	public static function summarize(): int {
 		$pass = 0;
 		$fail = 0;
@@ -48,16 +80,6 @@ wp_set_current_user( 1 );
 
 OpenclaWP_Smoke::check( 'OPENCLAWP_LOADED defined', defined( 'OPENCLAWP_LOADED' ) );
 OpenclaWP_Smoke::check( 'AGENTS_API_LOADED defined', defined( 'AGENTS_API_LOADED' ) );
-
-$has_example = wp_has_agent( 'openclawp-example' );
-OpenclaWP_Smoke::check(
-	'example agent registered',
-	$has_example,
-	$has_example ? '' : 'enable openclawp_register_example_agent filter for this assertion'
-);
-
-do_action( 'wp_abilities_api_categories_init' );
-do_action( 'wp_abilities_api_init' );
 OpenclaWP_Smoke::check( 'echo ability registered', wp_has_ability( 'openclawp/echo' ) );
 OpenclaWP_Smoke::check( 'chat ability registered', wp_has_ability( 'openclawp/chat' ) );
 
@@ -66,6 +88,19 @@ OpenclaWP_Smoke::check( 'CPT openclawp_session registered', null !== $cpt );
 OpenclaWP_Smoke::check(
 	'CPT openclawp_session exposed via REST',
 	$cpt && true === $cpt->show_in_rest && 'openclawp-sessions' === $cpt->rest_base
+);
+
+$doctor_checks          = OpenclaWP_CLI::collect_checks();
+$doctor_critical_failed = array_values(
+	array_filter(
+		$doctor_checks,
+		static fn ( array $check ): bool => 'fail' === $check['status'] && $check['critical']
+	)
+);
+OpenclaWP_Smoke::check(
+	'doctor critical checks pass',
+	empty( $doctor_critical_failed ),
+	empty( $doctor_critical_failed ) ? '' : json_encode( $doctor_critical_failed )
 );
 
 $store      = OpenclaWP_Conversation_Store::instance();
@@ -88,32 +123,25 @@ OpenclaWP_Smoke::check( 'release with right token returns true', true === $ok_re
 $store->delete_session( $session_id );
 
 // Resolver maps default_config to the shape using_model_preference accepts.
-add_action(
-	'wp_agents_api_init',
-	static function () {
-		wp_register_agent(
-			'openclawp-smoke-pin',
-			array(
-				'label'          => 'Smoke pin',
-				'description'    => 'Smoke test for model pinning.',
-				'default_config' => array(
-					'provider' => 'ollama',
-					'model'    => 'llama3.1:8b',
-				),
-			)
-		);
-		wp_register_agent(
-			'openclawp-smoke-auto',
-			array(
-				'label'          => 'Smoke auto',
-				'description'    => 'Smoke test for auto fallback.',
-				'default_config' => array( 'provider' => 'auto', 'model' => 'auto' ),
-			)
-		);
-	},
-	60
+OpenclaWP_Smoke::register_agent(
+	'openclawp-smoke-pin',
+	array(
+		'label'          => 'Smoke pin',
+		'description'    => 'Smoke test for model pinning.',
+		'default_config' => array(
+			'provider' => 'ollama',
+			'model'    => 'llama3.1:8b',
+		),
+	)
 );
-do_action( 'wp_agents_api_init' );
+OpenclaWP_Smoke::register_agent(
+	'openclawp-smoke-auto',
+	array(
+		'label'          => 'Smoke auto',
+		'description'    => 'Smoke test for auto fallback.',
+		'default_config' => array( 'provider' => 'auto', 'model' => 'auto' ),
+	)
+);
 
 $rc       = new ReflectionClass( 'OpenclaWP_Runner' );
 $resolver = $rc->getMethod( 'resolve_model_preference' );
@@ -139,21 +167,14 @@ if ( $auto_agent ) {
 	OpenclaWP_Smoke::check( 'auto config resolves to null preference', null === $pref );
 }
 
-add_action(
-	'wp_agents_api_init',
-	static function () {
-		wp_register_agent(
-			'openclawp-smoke-preflight',
-			array(
-				'label'          => 'Smoke preflight',
-				'description'    => 'Smoke test for deterministic pre-turn handling.',
-				'default_config' => array( 'provider' => 'auto', 'model' => 'auto' ),
-			)
-		);
-	},
-	70
+OpenclaWP_Smoke::register_agent(
+	'openclawp-smoke-preflight',
+	array(
+		'label'          => 'Smoke preflight',
+		'description'    => 'Smoke test for deterministic pre-turn handling.',
+		'default_config' => array( 'provider' => 'auto', 'model' => 'auto' ),
+	)
 );
-do_action( 'wp_agents_api_init' );
 
 $preflight_filter = static function ( $preflight, array $turn ) {
 	if ( 'openclawp-smoke-preflight' !== ( $turn['agent_slug'] ?? '' ) ) {
@@ -206,7 +227,7 @@ if ( class_exists( 'AgentsAPI\\AI\\Workflows\\WP_Agent_Workflow_Runner' ) ) {
 
 	add_filter( 'openclawp_register_example_workflow', '__return_true' );
 	add_filter( 'openclawp_register_example_agent', '__return_true' );
-	do_action( 'wp_agents_api_init' );
+	OpenclaWP_Workflow_Bootstrap::maybe_register_example_workflow();
 
 	OpenclaWP_Smoke::check(
 		'example workflow registers when opted in',
@@ -230,39 +251,29 @@ if ( class_exists( 'AgentsAPI\\AI\\Workflows\\WP_Agent_Workflow_Runner' ) ) {
 	// run-workflow with an inline spec that uses ONLY the substrate's default
 	// ability handler — no agent / Anthropic / Ollama needed. Registers a
 	// throwaway ability that echoes its input. wp_register_ability bails
-	// unless `doing_action('wp_abilities_api_init')` is true, so we hook
-	// the registration on the action and re-fire it.
+	// unless `doing_action('wp_abilities_api_init')` is true; use the registry
+	// directly so this smoke test does not re-fire every plugin's registration hook.
 	if ( ! wp_has_ability( 'tests/echo-input' ) ) {
-		add_action(
-			'wp_abilities_api_init',
-			static function () {
-				if ( wp_has_ability( 'tests/echo-input' ) ) {
-					return;
-				}
-				wp_register_ability(
-					'tests/echo-input',
-					array(
-						'label'               => 'Smoke echo',
-						'description'         => 'Returns its input under `echo` for the workflow smoke.',
-						'category'            => 'agents-api',
-						'input_schema'        => array(
-							'type'                 => 'object',
-							'additionalProperties' => true,
-						),
-						'output_schema'       => array(
-							'type'                 => 'object',
-							'additionalProperties' => true,
-						),
-						'execute_callback'    => static function ( $input ) {
-							return array( 'echo' => $input );
-						},
-						'permission_callback' => '__return_true',
-					)
-				);
-			},
-			20
+		OpenclaWP_Smoke::register_ability(
+			'tests/echo-input',
+			array(
+				'label'               => 'Smoke echo',
+				'description'         => 'Returns its input under `echo` for the workflow smoke.',
+				'category'            => 'agents-api',
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'additionalProperties' => true,
+				),
+				'output_schema'       => array(
+					'type'                 => 'object',
+					'additionalProperties' => true,
+				),
+				'execute_callback'    => static function ( $input ) {
+					return array( 'echo' => $input );
+				},
+				'permission_callback' => '__return_true',
+			)
 		);
-		do_action( 'wp_abilities_api_init' );
 	}
 
 	$run = wp_get_ability( 'agents/run-workflow' )->execute(

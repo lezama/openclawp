@@ -29,6 +29,9 @@ final class OpenclaWP_Abilities {
 		if ( ! function_exists( 'wp_register_ability_category' ) ) {
 			return;
 		}
+		if ( function_exists( 'wp_has_ability_category' ) && wp_has_ability_category( 'openclawp' ) ) {
+			return;
+		}
 
 		wp_register_ability_category(
 			'openclawp',
@@ -79,6 +82,10 @@ final class OpenclaWP_Abilities {
 	}
 
 	private static function register_get_time_ability(): void {
+		if ( wp_has_ability( 'openclawp/get-time' ) ) {
+			return;
+		}
+
 		wp_register_ability(
 			'openclawp/get-time',
 			array(
@@ -115,6 +122,10 @@ final class OpenclaWP_Abilities {
 	}
 
 	private static function register_echo_ability(): void {
+		if ( wp_has_ability( 'openclawp/echo' ) ) {
+			return;
+		}
+
 		wp_register_ability(
 			'openclawp/echo',
 			array(
@@ -150,6 +161,10 @@ final class OpenclaWP_Abilities {
 	}
 
 	private static function register_chat_ability(): void {
+		if ( wp_has_ability( 'openclawp/chat' ) ) {
+			return;
+		}
+
 		wp_register_ability(
 			'openclawp/chat',
 			array(

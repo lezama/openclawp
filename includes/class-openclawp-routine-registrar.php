@@ -54,6 +54,9 @@ final class OpenclaWP_Routine_Registrar {
 		if ( ! function_exists( 'wp_register_routine' ) ) {
 			return;
 		}
+		if ( function_exists( 'wp_get_routine' ) && null !== wp_get_routine( self::EXAMPLE_ROUTINE_ID ) ) {
+			return;
+		}
 
 		/**
 		 * Filter the agent slug the example routine targets. Default is the

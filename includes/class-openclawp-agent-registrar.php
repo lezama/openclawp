@@ -38,6 +38,9 @@ final class OpenclaWP_Agent_Registrar {
 		if ( ! apply_filters( 'openclawp_register_site_introspection', false ) ) {
 			return;
 		}
+		if ( wp_has_agent( 'openclawp-site-introspection' ) ) {
+			return;
+		}
 
 		wp_register_agent(
 			'openclawp-site-introspection',
@@ -73,6 +76,9 @@ final class OpenclaWP_Agent_Registrar {
 		// Reuses the same opt-in filter as the get_time ability so they ship
 		// together — there's no point in registering one without the other.
 		if ( ! apply_filters( 'openclawp_register_loop_demo', false ) ) {
+			return;
+		}
+		if ( wp_has_agent( 'openclawp-loop-demo' ) ) {
 			return;
 		}
 
@@ -111,6 +117,9 @@ final class OpenclaWP_Agent_Registrar {
 		 * @param bool $enabled Default false.
 		 */
 		if ( ! apply_filters( 'openclawp_register_example_agent', false ) ) {
+			return;
+		}
+		if ( wp_has_agent( self::EXAMPLE_AGENT_SLUG ) ) {
 			return;
 		}
 
@@ -154,6 +163,9 @@ final class OpenclaWP_Agent_Registrar {
 		 * @param bool $enabled Default true.
 		 */
 		if ( ! apply_filters( 'openclawp_register_workflow_drafter', true ) ) {
+			return;
+		}
+		if ( wp_has_agent( self::DRAFTER_AGENT_SLUG ) ) {
 			return;
 		}
 
@@ -276,6 +288,9 @@ PROMPT;
 		 * @param bool $enabled Default false.
 		 */
 		if ( ! apply_filters( 'openclawp_register_coordinator_demo', false ) ) {
+			return;
+		}
+		if ( wp_has_agent( self::COORDINATOR_AGENT_SLUG ) ) {
 			return;
 		}
 

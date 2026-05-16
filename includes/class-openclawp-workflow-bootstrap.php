@@ -79,6 +79,9 @@ final class OpenclaWP_Workflow_Bootstrap {
 		if ( ! function_exists( 'wp_register_workflow' ) ) {
 			return;
 		}
+		if ( function_exists( 'wp_get_workflow' ) && null !== wp_get_workflow( 'openclawp/site-summary' ) ) {
+			return;
+		}
 
 		wp_register_workflow(
 			array(

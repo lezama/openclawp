@@ -29,6 +29,10 @@ final class OpenclaWP_Site_Abilities {
 	}
 
 	private static function register_get_recent_posts(): void {
+		if ( wp_has_ability( 'openclawp/get-recent-posts' ) ) {
+			return;
+		}
+
 		wp_register_ability(
 			'openclawp/get-recent-posts',
 			array(
@@ -96,6 +100,10 @@ final class OpenclaWP_Site_Abilities {
 	}
 
 	private static function register_count_comments(): void {
+		if ( wp_has_ability( 'openclawp/count-comments' ) ) {
+			return;
+		}
+
 		wp_register_ability(
 			'openclawp/count-comments',
 			array(
@@ -132,6 +140,10 @@ final class OpenclaWP_Site_Abilities {
 	}
 
 	private static function register_get_active_plugins(): void {
+		if ( wp_has_ability( 'openclawp/get-active-plugins' ) ) {
+			return;
+		}
+
 		wp_register_ability(
 			'openclawp/get-active-plugins',
 			array(
@@ -176,6 +188,10 @@ final class OpenclaWP_Site_Abilities {
 	}
 
 	private static function register_get_current_user(): void {
+		if ( wp_has_ability( 'openclawp/get-current-user' ) ) {
+			return;
+		}
+
 		wp_register_ability(
 			'openclawp/get-current-user',
 			array(
