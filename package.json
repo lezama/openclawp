@@ -8,7 +8,9 @@
 		"build:chat": "wp-scripts build blocks/chat/src/view.js --output-path=blocks/chat/build",
 		"build:routines": "wp-scripts build blocks/routines/src/view.js --output-path=blocks/routines/build && cp node_modules/@wordpress/dataviews/build-style/style.css blocks/routines/build/view.css",
 		"start": "wp-scripts start blocks/chat/src/view.js --output-path=blocks/chat/build",
-		"lint": "eslint blocks"
+		"lint": "eslint blocks",
+		"test:e2e": "playwright test",
+		"test:e2e:ui": "playwright test --ui"
 	},
 	"dependencies": {
 		"@automattic/agenttic-client": "^0.1.63",
@@ -18,6 +20,7 @@
 		"react-dom": "^18.3.0"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.49.0",
 		"@wordpress/eslint-plugin": "^25.1.0",
 		"@wordpress/scripts": "^30.0.0",
 		"eslint": "^9.0.0"

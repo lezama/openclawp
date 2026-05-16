@@ -9,7 +9,12 @@
     "woocommerce/action-scheduler": "^3.9"
   },
   "require-dev": {
-    "phpunit/phpunit": "^9.6"
+    "phpunit/phpunit": "^9.6",
+    "squizlabs/php_codesniffer": "^3.10",
+    "wp-coding-standards/wpcs": "^3.1",
+    "phpcompatibility/phpcompatibility-wp": "^2.1",
+    "phpstan/phpstan": "^1.12",
+    "szepeviktor/phpstan-wordpress": "^1.3"
   },
   "suggest": {
     "wordpress/php-ai-client": "Required only on WordPress < 7.0. WP 7.0+ ships the AI Client in core (wp-includes/php-ai-client); including a second copy here causes namespace conflicts with bundled-and-prefixed deps."
@@ -21,5 +26,21 @@
     }
   ],
   "minimum-stability": "dev",
-  "prefer-stable": true
+  "prefer-stable": true,
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    },
+    "platform": {
+      "php": "8.1.0"
+    },
+    "sort-packages": true
+  },
+  "scripts": {
+    "test": "phpunit",
+    "test:smoke": "php tests/smoke.php",
+    "lint:php": "phpcs",
+    "lint:php:fix": "phpcbf",
+    "analyse": "phpstan analyse"
+  }
 }
