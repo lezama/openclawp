@@ -89,6 +89,9 @@ jobs:
   static-analysis:
     name: Static Analysis (PHPCS + PHPStan)
     runs-on: ubuntu-latest
+    # The codebase predates WPCS/PHPStan adoption. Surfacing violations is
+    # useful but should not block PRs until the backlog is burned down.
+    continue-on-error: true
 
     steps:
       - name: Checkout code

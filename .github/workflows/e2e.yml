@@ -38,9 +38,9 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Clone agents-api as sibling directory
-        # tools/wp-env/.wp-env.json maps agents-api from ../../../agents-api
-        # (the parent of $GITHUB_WORKSPACE on the runner). actions/checkout@v6
-        # refuses paths outside the workspace, so use git clone directly.
+        # wp-env mounts agents-api from a path relative to the workspace.
+        # actions/checkout@v6 refuses paths outside its own workspace, so
+        # use git clone directly into a sibling directory.
         run: |
           git clone --depth=1 --branch=main \
             https://github.com/Automattic/agents-api.git \
@@ -70,16 +70,38 @@ jobs:
       - name: Build plugin assets
         run: npm run build
 
-      - name: Install wp-env tooling
-        working-directory: tools/wp-env
-        run: npm install
+      - name: Install wp-env at repo root
+        # tools/wp-env/ was retired in commit edc03bb; bootstrap a minimal
+        # standalone stack here so the e2e workflow is self-contained.
+        run: npm install --no-save @wordpress/env@^10.0.0
+
+      - name: Generate .wp-env.json for CI
+        # Mounts the plugin from the workspace and the sibling agents-api
+        # clone. Pins to WP trunk + PHP 8.2; the plugin requires WP 7.0+,
+        # which is still pre-release.
+        run: |
+          cat > .wp-env.json <<'JSON'
+          {
+            "core": "WordPress/WordPress#master",
+            "phpVersion": "8.2",
+            "plugins": [
+              "../agents-api",
+              "."
+            ],
+            "config": {
+              "WP_DEBUG": true,
+              "WP_DEBUG_LOG": true,
+              "SCRIPT_DEBUG": true
+            }
+          }
+          JSON
+          cat .wp-env.json
 
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
       - name: Start wp-env
-        working-directory: tools/wp-env
-        run: npm start
+        run: npx wp-env start
         timeout-minutes: 15
 
       - name: Wait for wp-env to be ready
@@ -101,7 +123,6 @@ jobs:
           fi
 
       - name: Verify plugin health
-        working-directory: tools/wp-env
         run: |
           echo "=== Plugin status ==="
           npx wp-env run cli wp plugin list --format=table
@@ -137,12 +158,10 @@ jobs:
 
       - name: Dump PHP debug.log on failure
         if: failure()
-        working-directory: tools/wp-env
         run: |
           echo "=== PHP debug.log ==="
           npx wp-env run cli cat /var/www/html/wp-content/debug.log 2>/dev/null | tail -200 || echo "(no error log)"
 
       - name: Stop wp-env
         if: always()
-        working-directory: tools/wp-env
-        run: npm stop || true
+        run: npx wp-env stop || true
