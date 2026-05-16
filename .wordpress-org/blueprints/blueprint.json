@@ -1,0 +1,56 @@
+{
+	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
+	"meta": {
+		"title": "openclaWP",
+		"description": "An agent that lives inside your WordPress site — chat block, REST endpoints, workflows, channels. Demo runs entirely in your browser with a canned runner; swap in any AI provider after the demo.",
+		"author": "lezama",
+		"categories": ["AI", "Agents", "Chat"]
+	},
+	"landingPage": "/wp-admin/admin.php?page=openclawp",
+	"login": { "username": "admin", "password": "password" },
+	"preferredVersions": { "php": "8.2", "wp": "beta" },
+	"features": { "networking": true },
+	"steps": [
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://github-proxy.com/proxy/?repo=Automattic/agents-api",
+				"caption": "Installing agents-api substrate"
+			},
+			"options": { "activate": true }
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "url",
+				"url": "https://github-proxy.com/proxy/?repo=lezama/openclawp",
+				"caption": "Installing openclaWP"
+			},
+			"options": { "activate": true }
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/mu-plugins/openclawp-demo.php",
+			"data": {
+				"resource": "url",
+				"url": "https://raw.githubusercontent.com/lezama/openclawp/main/.wordpress-org/blueprints/mu-demo-runner.php"
+			}
+		},
+		{
+			"step": "wp-cli",
+			"command": "wp post create --post_type=post --post_status=publish --post_title='Hello from openclaWP' --post_content='Demo post for the example agent to read. Try asking the chat what your latest post is.'"
+		},
+		{
+			"step": "wp-cli",
+			"command": "wp comment generate --count=3 --post_id=1"
+		},
+		{
+			"step": "setSiteOptions",
+			"options": {
+				"blogname": "openclaWP demo",
+				"blogdescription": "Agent inside the site — no install, no key."
+			}
+		}
+	]
+}
