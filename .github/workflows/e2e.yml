@@ -37,21 +37,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Checkout agents-api sibling
-        # tools/wp-env/.wp-env.json mounts agents-api from ../../../agents-api.
-        # Composer install also pulls it into vendor/, but the mapping needs
-        # the sibling directory to exist.
-        uses: actions/checkout@v6
-        with:
-          repository: Automattic/agents-api
-          path: ../agents-api-checkout
-          ref: main
-
-      - name: Move agents-api alongside openclawp
-        # actions/checkout can't write outside $GITHUB_WORKSPACE, so we stage
-        # under workspace then move next to the repo for the mapping to resolve.
+      - name: Clone agents-api as sibling directory
+        # tools/wp-env/.wp-env.json maps agents-api from ../../../agents-api
+        # (the parent of $GITHUB_WORKSPACE on the runner). actions/checkout@v6
+        # refuses paths outside the workspace, so use git clone directly.
         run: |
-          mv "${GITHUB_WORKSPACE}/../agents-api-checkout" "${GITHUB_WORKSPACE}/../agents-api"
+          git clone --depth=1 --branch=main \
+            https://github.com/Automattic/agents-api.git \
+            "${GITHUB_WORKSPACE}/../agents-api"
           ls -la "${GITHUB_WORKSPACE}/.."
 
       - name: Setup Node.js
