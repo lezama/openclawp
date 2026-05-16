@@ -18,7 +18,7 @@
 				"url": "https://github-proxy.com/proxy/?repo=Automattic/agents-api",
 				"caption": "Installing agents-api substrate"
 			},
-			"options": { "activate": true }
+			"options": { "activate": false }
 		},
 		{
 			"step": "installPlugin",
@@ -27,7 +27,19 @@
 				"url": "https://github-proxy.com/proxy/?repo=lezama/openclawp",
 				"caption": "Installing openclaWP"
 			},
-			"options": { "activate": true }
+			"options": { "activate": false }
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php require '/wordpress/wp-load.php'; $dir = WP_PLUGIN_DIR; $targets = ['agents-api.php' => 'agents-api', 'openclawp.php' => 'openclawp']; foreach ( (array) glob( $dir . '/*' ) as $candidate ) { if ( ! is_dir( $candidate ) ) continue; foreach ( $targets as $main => $slug ) { if ( file_exists( $candidate . '/' . $main ) && basename( $candidate ) !== $slug ) { rename( $candidate, $dir . '/' . $slug ); echo basename( $candidate ) . ' -> ' . $slug . \"\\n\"; break; } } }"
+		},
+		{
+			"step": "activatePlugin",
+			"pluginPath": "agents-api/agents-api.php"
+		},
+		{
+			"step": "activatePlugin",
+			"pluginPath": "openclawp/openclawp.php"
 		},
 		{
 			"step": "writeFile",
