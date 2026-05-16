@@ -17,6 +17,8 @@ final class OpenclaWP_Bootstrap {
 		}
 		self::$initialized = true;
 
+		OpenclaWP_CLI::register();
+
 		if ( ! self::has_required_dependencies() ) {
 			add_action( 'admin_notices', array( __CLASS__, 'render_missing_dependencies_notice' ) );
 			return;

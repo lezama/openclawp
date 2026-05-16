@@ -1,6 +1,6 @@
 === openclaWP ===
 Contributors: lezama
-Tags: ai, agents, chat, workflows, whatsapp
+Tags: ai, ai agent, agents, chat, mcp, workflows, anthropic, ollama, openai, claude, gpt, gemini, whatsapp, chatbot, agents api, abilities api
 Requires at least: 7.0
 Tested up to: 7.0
 Requires PHP: 8.1
@@ -66,6 +66,10 @@ The WhatsApp Cloud API transport uses Meta's official Graph API. The unofficial 
 = Can site visitors use the chat block? =
 
 REST and ability permissions default to `manage_options`. Site owners can override the gates with the documented permission filters.
+
+== Screenshots ==
+
+1. The bundled demo running entirely in the browser via WordPress Playground — the agent calls the real `openclawp/get-recent-posts` ability to answer "what is my latest post?" with live WordPress data, no API key required.
 
 == External services ==
 

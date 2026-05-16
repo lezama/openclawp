@@ -1,8 +1,16 @@
 # openclaWP
 
+[![Try in Playground](https://img.shields.io/badge/Try%20in%20Playground-21759b?logo=wordpress&logoColor=white&style=for-the-badge)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/lezama/openclawp/main/.wordpress-org/blueprints/blueprint.json)
+[![GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue?style=for-the-badge)](LICENSE)
+[![PHP 8.1+](https://img.shields.io/badge/php-8.1%2B-777bb4?style=for-the-badge&logo=php&logoColor=white)](https://www.php.net/)
+[![WordPress 7.0+](https://img.shields.io/badge/WordPress-7.0%2B-21759b?style=for-the-badge&logo=wordpress&logoColor=white)](https://wordpress.org/)
+
 **An agent that lives inside your WordPress site.** Reads your content, talks back through chat, and can be reached from outside WordPress through pluggable connectors.
 
-Built on top of [`Automattic/agents-api`](https://github.com/Automattic/agents-api). Other plugins register agents (with their own tools, system prompts, and personas); openclaWP turns the site itself into a place to *use* them.
+Built on top of [`Automattic/agents-api`](https://github.com/Automattic/agents-api) and the AI Client / Connectors API bundled with WordPress 7.0. Other plugins register agents (with their own tools, system prompts, and personas); openclaWP turns the site itself into a place to *use* them.
+
+![openclaWP chat answering "what is my latest post?" with real WordPress data, running in WordPress Playground](.wordpress-org/screenshot-1.png)
+*The bundled demo running entirely in your browser — no install, no API key. The agent calls the real `openclawp/get-recent-posts` ability and quotes the seeded post back.*
 
 > ### ⚠️ Spike-stage software
 >
@@ -27,6 +35,26 @@ Built on top of [`Automattic/agents-api`](https://github.com/Automattic/agents-a
 | **Connector: WhatsApp via wacli** | Pair as a WhatsApp linked device using [`openclaw/wacli`](https://github.com/openclaw/wacli)'s whatsmeow protocol | ⚠️ unofficial |
 | **Connector: WhatsApp Cloud API** | Meta's official Graph API, requires Business account + access token | ✅ alternative |
 | **More connectors (Telegram, Slack, Email, …)** | The base class is in agents-api; build them like the wacli channel | ➖ not started |
+
+---
+
+## How openclaWP compares
+
+The WordPress AI agent space has several plugins now. They overlap in the obvious places (chat in wp-admin, tool calling, multi-provider) but differ in how they sit relative to the new WordPress AI building blocks.
+
+| | **openclaWP** | [sd-ai-agent](https://github.com/Ultimate-Multisite/superdav-ai-agent) | [ClawWP](https://github.com/hifriendbot/clawwp) | [AI Engine](https://github.com/jordymeow/ai-engine) | [AI Services](https://github.com/felixarntz/ai-services) | [WordPress/ai](https://github.com/WordPress/ai) |
+|---|---|---|---|---|---|---|
+| Substrate | `agents-api` + WP 7.0 AI Client | WP 7.0 AI Client | self | self | self | WP 7.0 AI Client + Abilities API |
+| Provider | any [Connectors API](https://wordpress.org/plugins/ai-provider-for-openai/) plugin | any Connectors API plugin | Anthropic-first | OpenAI/Anthropic/Google | multi-provider | multi-provider |
+| Per-agent MCP server | ✅ scoped to one agent's tools | via [WP MCP Adapter](https://github.com/WordPress/mcp-adapter) (site-wide) | — | ✅ site-wide | via WP MCP Adapter | — |
+| MCP client | — | — | ✅ HTTP+stdio | ✅ | — | — |
+| Workflows | ✅ deterministic, CPT-backed, run recorder | — | — | — | — | (on roadmap) |
+| Per-turn cost dashboard | ✅ | — (tracks tokens) | ✅ | — | — | (on roadmap) |
+| WordPress Playground demo | ✅ | ✅ | — | — | ✅ | ✅ |
+| Chat block (Gutenberg) | ✅ | three chat UIs | sidebar | UI Builder | — | (Gutenberg blocks) |
+| Concrete channel connectors | WhatsApp Cloud API | — | Telegram / Slack / Discord | — | — | — |
+
+**Where openclaWP fits:** if you're already using (or planning to use) the `agents-api` substrate or the WordPress AI Client, openclaWP is the thinnest consumer that gives you a chat UI, REST surface, workflows, and an MCP endpoint. If you want a closed, "install one plugin and you're done" experience, sd-ai-agent or AI Engine are heavier-but-more-batteries-included.
 
 ---
 
