@@ -89,9 +89,9 @@ jobs:
   static-analysis:
     name: Static Analysis (PHPCS + PHPStan)
     runs-on: ubuntu-latest
-    # The codebase predates WPCS/PHPStan adoption. Surfacing violations is
-    # useful but should not block PRs until the backlog is burned down.
-    continue-on-error: true
+    # The codebase predates WPCS/PHPStan adoption. PHPCS + PHPStan steps
+    # are continue-on-error so violations surface as job logs but do not
+    # fail the PR check until the backlog is burned down.
 
     steps:
       - name: Checkout code
@@ -120,7 +120,9 @@ jobs:
         run: composer install --prefer-dist --no-progress
 
       - name: Run PHPCS
+        continue-on-error: true
         run: vendor/bin/phpcs -q --report=full --report-summary
 
       - name: Run PHPStan
+        continue-on-error: true
         run: vendor/bin/phpstan analyse --error-format=github --no-progress
