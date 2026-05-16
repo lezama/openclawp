@@ -2,7 +2,7 @@
 /**
  * Plugin Name: openclaWP
  * Plugin URI: https://github.com/lezama/openclawp
- * Description: Generic chat-with-an-agent WordPress plugin built on Automattic/agents-api. Registers an example agent and exposes REST + admin chat surfaces; downstream plugins register additional agents.
+ * Description: Run WordPress-native agents in chat blocks, admin screens, REST endpoints, workflows, and messaging channels.
  * Version: 0.1.0
  * Author: Miguel Lezama
  * Author URI: https://github.com/lezama
@@ -12,7 +12,6 @@
  * Requires PHP: 8.1
  * Requires at least: 7.0
  * Tested up to: 7.0
- * Requires Plugins: agents-api
  *
  * @package OpenclaWP
  */

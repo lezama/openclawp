@@ -29,3 +29,4 @@ phpunit.xml.dist
 
 README.md
 docs/release.md
+docs/scorecard.md
