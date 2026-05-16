@@ -19,7 +19,6 @@ export default [
 		ignores: [
 			'blocks/chat/build/**',
 			'node_modules/**',
-			'tools/wp-env/node_modules/**',
 		],
 	},
 	{

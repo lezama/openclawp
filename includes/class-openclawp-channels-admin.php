@@ -2,23 +2,21 @@
 /**
  * Channels admin — list view + detail dispatcher.
  *
- * Renders `wp-admin → openclaWP → Channels`. Each registered channel
- * (WhatsApp via wacli, Telegram, Email, future) shows up as a card on the
- * list view. Clicking "Configure" opens its detail view, which is rendered
- * by the channel-specific module via the `detail_renderer` callback set in
- * the registration.
+ * Renders `wp-admin → openclaWP → Channels`. Each registered channel shows
+ * up as a card on the list view. Clicking "Configure" opens its detail view,
+ * which is rendered by the channel-specific module via the `detail_renderer`
+ * callback set in the registration.
  *
  * Channels register themselves through the `openclawp_channels` filter:
  *
  *     add_filter( 'openclawp_channels', function ( array $channels ): array {
  *         $channels[] = array(
- *             'id'              => 'wacli',
- *             'name'            => 'WhatsApp',
- *             'subtitle'        => 'via openclaw/wacli',
+ *             'id'              => 'my-channel',
+ *             'name'            => 'My Channel',
  *             'description'     => '…',
  *             'status'          => OpenclaWP_Channels_Admin::STATUS_CONNECTED,
- *             'detail_renderer' => array( OpenclaWP_Wacli_Admin::class, 'render_detail' ),
- *             'detail_assets'   => array( OpenclaWP_Wacli_Admin::class, 'enqueue_detail_assets' ),
+ *             'detail_renderer' => array( My_Channel_Admin::class, 'render_detail' ),
+ *             'detail_assets'   => array( My_Channel_Admin::class, 'enqueue_detail_assets' ),
  *         );
  *         return $channels;
  *     } );
