@@ -1,0 +1,35 @@
+# Minimal PHPStan config. Level starts conservative; ratchet up as the
+# codebase warrants.
+#
+# phpstan-wordpress provides stubs for core WP functions, classes, and constants.
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 5
+    paths:
+        - openclawp.php
+        - includes
+
+    excludePaths:
+        - vendor
+        - node_modules
+        - tests/stubs
+        - tools/wp-env
+        - blocks/*/build
+
+    # WP-CLI runs aren't on the production path. Methods that only exist in
+    # WP-CLI context shouldn't fail PHPStan when WP-CLI isn't loaded.
+    universalObjectCratesClasses:
+        - WP_Post
+
+    # The agents-api package types resolve at runtime via composer autoload.
+    # PHPStan will follow them after `composer install`.
+    bootstrapFiles:
+        - vendor/autoload.php
+
+    ignoreErrors:
+        # Plugin entry point and bootstrap intentionally check for symbols that
+        # may not exist (e.g. wp_get_agents() before agents-api loads).
+        - identifier: function.notFound
+          path: openclawp.php

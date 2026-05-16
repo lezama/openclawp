@@ -26,6 +26,13 @@ homeboy.json
 package.json
 package-lock.json
 phpunit.xml.dist
+phpcs.xml.dist
+phpstan.neon.dist
+playwright.config.js
+openclawp.zip
+openclawp-*.zip
+playwright-report
+test-results
 
 README.md
 docs/release.md

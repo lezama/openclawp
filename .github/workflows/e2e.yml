@@ -1,0 +1,155 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.distignore'
+      - '.wordpress-org/**'
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Playwright E2E (WP ${{ matrix.wp }})
+    runs-on: ubuntu-latest
+    # 60 min covers: npm ci + composer install + wp-env start + browser install
+    # + the test runtime itself. Tune down once we have telemetry.
+    timeout-minutes: 60
+    # WP 7.0 RC may regress between runs.
+    continue-on-error: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        wp: ['rc']
+        include:
+          - wp: 'rc'
+            wp_env_port: '8888'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Checkout agents-api sibling
+        # tools/wp-env/.wp-env.json mounts agents-api from ../../../agents-api.
+        # Composer install also pulls it into vendor/, but the mapping needs
+        # the sibling directory to exist.
+        uses: actions/checkout@v6
+        with:
+          repository: Automattic/agents-api
+          path: ../agents-api-checkout
+          ref: main
+
+      - name: Move agents-api alongside openclawp
+        # actions/checkout can't write outside $GITHUB_WORKSPACE, so we stage
+        # under workspace then move next to the repo for the mapping to resolve.
+        run: |
+          mv "${GITHUB_WORKSPACE}/../agents-api-checkout" "${GITHUB_WORKSPACE}/../agents-api"
+          ls -la "${GITHUB_WORKSPACE}/.."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - name: Install root Node dependencies
+        run: npm ci
+
+      - name: Build plugin assets
+        run: npm run build
+
+      - name: Install wp-env tooling
+        working-directory: tools/wp-env
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Start wp-env
+        working-directory: tools/wp-env
+        run: npm start
+        timeout-minutes: 15
+
+      - name: Wait for wp-env to be ready
+        run: |
+          ready=0
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${{ matrix.wp_env_port }}/wp-login.php" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "wp-env is ready on port ${{ matrix.wp_env_port }} (HTTP $code)"
+              ready=1
+              break
+            fi
+            echo "Waiting for wp-env... attempt $i (HTTP $code)"
+            sleep 5
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::wp-env did not become ready in time on port ${{ matrix.wp_env_port }}"
+            exit 1
+          fi
+
+      - name: Verify plugin health
+        working-directory: tools/wp-env
+        run: |
+          echo "=== Plugin status ==="
+          npx wp-env run cli wp plugin list --format=table
+          echo ""
+          echo "=== openclawp activation ==="
+          npx wp-env run cli wp plugin is-active openclawp \
+            && echo "ok: openclawp active" \
+            || (echo "::error::openclawp is not active"; exit 1)
+
+      - name: Run Playwright E2E tests
+        run: npx playwright test
+        env:
+          WP_BASE_URL: http://localhost:${{ matrix.wp_env_port }}
+          WP_ADMIN_USER: admin
+          WP_ADMIN_PASSWORD: password
+          CI: true
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playwright-report-wp${{ matrix.wp }}
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload test results on failure
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: test-results-wp${{ matrix.wp }}
+          path: test-results/
+          retention-days: 7
+
+      - name: Dump PHP debug.log on failure
+        if: failure()
+        working-directory: tools/wp-env
+        run: |
+          echo "=== PHP debug.log ==="
+          npx wp-env run cli cat /var/www/html/wp-content/debug.log 2>/dev/null | tail -200 || echo "(no error log)"
+
+      - name: Stop wp-env
+        if: always()
+        working-directory: tools/wp-env
+        run: npm stop || true

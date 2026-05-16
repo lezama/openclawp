@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, zip
+          tools: composer:v2
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Composer dependencies (production only)
+        run: composer install --no-dev --prefer-dist --no-progress
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Verify plugin version matches tag
+        run: |
+          set -e
+          tag="${{ steps.version.outputs.VERSION }}"
+          header=$(grep -oE "Version:\s*[0-9.]+" openclawp.php | head -1 | sed -E 's/Version:\s*//')
+          constant=$(grep -oE "OPENCLAWP_VERSION',\s*'[0-9.]+'" openclawp.php | head -1 | sed -E "s/.*'([0-9.]+)'.*/\1/")
+          echo "tag=$tag header=$header constant=$constant"
+          if [ "$tag" != "$header" ] || [ "$tag" != "$constant" ]; then
+            echo "::error::Version mismatch — tag v$tag, plugin header $header, OPENCLAWP_VERSION $constant"
+            exit 1
+          fi
+
+      - name: Build distribution zip
+        run: bash bin/build.sh "${{ steps.version.outputs.VERSION }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            openclawp-${{ steps.version.outputs.VERSION }}.zip
+            openclawp.zip
+          name: openclaWP v${{ steps.version.outputs.VERSION }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
