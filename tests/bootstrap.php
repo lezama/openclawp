@@ -34,6 +34,15 @@ if ( ! function_exists( 'add_action' ) ) {
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( string $hook, callable $cb, int $priority = 10, int $accepted_args = 1 ): void {}
 }
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $hook, $value, ...$args ) {
+		// Tests that need to assert filter dispatch can set
+		// $GLOBALS['openclawp_test_filters'][$hook] to a callable; the
+		// stub will invoke it. Otherwise behaves as a pass-through.
+		$cb = $GLOBALS['openclawp_test_filters'][ $hook ] ?? null;
+		return null === $cb ? $value : $cb( $value, ...$args );
+	}
+}
 
 require_once __DIR__ . '/../vendor/autoload.php';
 

@@ -303,7 +303,8 @@ final class OpenclaWP_Runner {
 				$telemetry['model']       = self::extract_model_id( $generated );
 				$telemetry['token_usage'] = self::extract_token_usage( $generated );
 
-				$tool_calls    = self::extract_tool_calls( $generated );
+				$tool_calls = self::extract_tool_calls( $generated );
+				$telemetry['tool_call_count'] = count( $tool_calls );
 				// `toText()` throws "No text content found in first candidate"
 				// when the model responded with only tool calls (a normal
 				// outcome on the first mediation turn for tool-heavy agents

@@ -25,11 +25,13 @@ final class OpenclaWP_Bootstrap {
 		// Register hooks. Class files load lazily through includes/autoload.php
 		// the first time PHP needs to construct or call into a class.
 		add_action( 'init', array( 'OpenclaWP_Conversation_Store', 'register_post_type' ), 5 );
+		add_action( 'init', array( 'OpenclaWP_Usage_Recorder', 'register_post_type' ), 5 );
 		add_action( 'init', array( __CLASS__, 'register_blocks' ), 10 );
 		OpenclaWP_Agent_Registrar::register();
 		OpenclaWP_Routine_Registrar::register();
 		OpenclaWP_Abilities::register();
 		OpenclaWP_Event_Sink::register();
+		OpenclaWP_Usage_Recorder::register();
 		OpenclaWP_Rest::register();
 		OpenclaWP_Agenttic_Bridge::register();
 		OpenclaWP_Canonical_Chat_Handler::register();
@@ -41,6 +43,7 @@ final class OpenclaWP_Bootstrap {
 			OpenclaWP_Admin::register();
 			OpenclaWP_Channels_Admin::register();
 			OpenclaWP_Routines_Admin::register();
+			OpenclaWP_Usage_Admin::register();
 			OpenclaWP_Wacli_Admin::register();
 		}
 
