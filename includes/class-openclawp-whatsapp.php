@@ -33,9 +33,8 @@ final class OpenclaWP_Whatsapp {
 
 	/**
 	 * Warn admins when the WhatsApp channel has live credentials but no
-	 * app_secret. In that state {@see verify_signature()} accepts any inbound
-	 * request — fine for local dev but unsafe in production, since anyone who
-	 * guesses the webhook URL can drive the agent.
+	 * app_secret. In that state inbound webhooks fail closed because
+	 * {@see verify_signature()} cannot authenticate Meta's request.
 	 */
 	public static function maybe_render_missing_app_secret_notice(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -55,7 +54,7 @@ final class OpenclaWP_Whatsapp {
 		printf(
 			'<div class="notice notice-warning"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
 			esc_html__( 'openclaWP WhatsApp:', 'openclawp' ),
-			esc_html__( 'Your WhatsApp Cloud API credentials are configured but the App Secret is empty. Inbound webhook requests are accepted without HMAC verification — anyone who finds the webhook URL can post messages to the configured agent. Set the Meta app secret to enable signature verification.', 'openclawp' ),
+			esc_html__( 'Your WhatsApp Cloud API credentials are configured but the App Secret is empty. Inbound webhook requests will be rejected until the Meta app secret is set.', 'openclawp' ),
 			esc_url( admin_url( 'admin.php?page=openclawp-whatsapp' ) ),
 			esc_html__( 'Open WhatsApp settings', 'openclawp' )
 		);
@@ -179,13 +178,8 @@ final class OpenclaWP_Whatsapp {
 	/* ----------------------------- Signature ------------------------------ */
 
 	public static function verify_signature( string $raw_body, string $signature_header, string $app_secret ): bool {
-		// Dev/test convenience: when no app_secret is configured, skip HMAC
-		// verification entirely. Sites running real WhatsApp Cloud API traffic
-		// MUST set app_secret in openclaWP → WhatsApp; without it any request
-		// to /whatsapp/webhook is accepted. The settings UI surfaces this as a
-		// warning.
 		if ( '' === $app_secret ) {
-			return true;
+			return false;
 		}
 		if ( 0 !== strpos( $signature_header, 'sha256=' ) ) {
 			return false;
