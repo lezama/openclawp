@@ -1120,6 +1120,85 @@ if ( class_exists( 'OpenclaWP_Telegram' ) ) {
 	update_option( OpenclaWP_Telegram::OPTION_NAME, $prior_settings, false );
 }
 
+// External WhatsApp gateway adapter — unit-style checks that don't require a
+// configured gateway. The full HTTP path is covered by tests/unit/.
+if ( class_exists( 'OpenclaWP_External_Whatsapp' ) ) {
+	$ext_secret = 'gateway-secret';
+	$ext_body   = '{"from":"+15555550100","text":"hola","id":"m1","type":"text"}';
+	$ext_sig    = 'sha256=' . hash_hmac( 'sha256', $ext_body, $ext_secret );
+
+	OpenclaWP_Smoke::check(
+		'external_wa verify_signature accepts a correctly signed body',
+		OpenclaWP_External_Whatsapp::verify_signature( $ext_body, $ext_sig, $ext_secret )
+	);
+	OpenclaWP_Smoke::check(
+		'external_wa verify_signature rejects HMAC mismatch',
+		false === OpenclaWP_External_Whatsapp::verify_signature(
+			$ext_body,
+			'sha256=' . hash_hmac( 'sha256', $ext_body, 'other-secret' ),
+			$ext_secret
+		)
+	);
+	OpenclaWP_Smoke::check(
+		'external_wa verify_signature fails closed on empty secret',
+		false === OpenclaWP_External_Whatsapp::verify_signature( $ext_body, 'sha256=anything', '' )
+	);
+
+	$canonical = OpenclaWP_External_Whatsapp::normalize_message( json_decode( $ext_body, true ) );
+	OpenclaWP_Smoke::check(
+		'external_wa normalize_message extracts canonical text',
+		is_array( $canonical ) && '+15555550100' === $canonical['from'] && 'hola' === $canonical['text']
+	);
+	OpenclaWP_Smoke::check(
+		'external_wa normalize_message rejects unsupported types',
+		null === OpenclaWP_External_Whatsapp::normalize_message(
+			array( 'from' => '+15555550100', 'id' => 'm2', 'type' => 'image' )
+		)
+	);
+
+	// Evolution-api → canonical remapping via the inbound filter.
+	$ext_mapper = static function ( $payload, $headers ) {
+		if ( ! is_array( $payload ) || 'messages.upsert' !== ( $payload['event'] ?? '' ) ) {
+			return $payload;
+		}
+		$data = $payload['data'] ?? array();
+		if ( ! empty( $data['key']['fromMe'] ) ) {
+			return array();
+		}
+		$jid  = (string) ( $data['key']['remoteJid'] ?? '' );
+		$from = '+' . preg_replace( '/[^0-9]/', '', explode( '@', $jid, 2 )[0] );
+		return array(
+			'from' => $from,
+			'text' => (string) ( $data['message']['conversation'] ?? '' ),
+			'id'   => (string) ( $data['key']['id'] ?? '' ),
+			'type' => 'text',
+		);
+	};
+	add_filter( 'openclawp_external_wa_inbound_map', $ext_mapper, 10, 2 );
+
+	$evolution = apply_filters(
+		'openclawp_external_wa_inbound_map',
+		array(
+			'event' => 'messages.upsert',
+			'data'  => array(
+				'key'     => array( 'remoteJid' => '15555550100@s.whatsapp.net', 'fromMe' => false, 'id' => 'EVO-1' ),
+				'message' => array( 'conversation' => 'hola desde evolution' ),
+			),
+		),
+		array()
+	);
+	$evolution_msg = is_array( $evolution ) ? OpenclaWP_External_Whatsapp::normalize_message( $evolution ) : null;
+	remove_filter( 'openclawp_external_wa_inbound_map', $ext_mapper, 10 );
+
+	OpenclaWP_Smoke::check(
+		'external_wa inbound filter remaps evolution-api payload',
+		is_array( $evolution_msg )
+			&& '+15555550100' === $evolution_msg['from']
+			&& 'hola desde evolution' === $evolution_msg['text']
+			&& 'EVO-1' === $evolution_msg['id']
+	);
+}
+
 $failed = OpenclaWP_Smoke::summarize();
 if ( $failed > 0 ) {
 	exit( 1 );
