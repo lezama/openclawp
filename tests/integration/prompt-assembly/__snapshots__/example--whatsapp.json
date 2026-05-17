@@ -1,0 +1,29 @@
+{
+	"agent_slug": "openclawp-example",
+	"channel": "whatsapp",
+	"delegate_targets": [],
+	"max_turns": 5,
+	"messages": [
+		{
+			"content": "Hello",
+			"role": "user"
+		}
+	],
+	"model_preference": {
+		"model": "claude-haiku-4-5"
+	},
+	"runtime_context": {
+		"client_context": {
+			"client_name": "whatsapp",
+			"connector_id": "whatsapp",
+			"external_conversation_id": "<PHONE>",
+			"external_message_id": "<MSG_ID>",
+			"external_provider": "whatsapp",
+			"room_kind": "dm",
+			"sender_id": "<PHONE>",
+			"source": "channel"
+		}
+	},
+	"system_instruction": "Bundled example agent for smoke-testing openclaWP. Opt in via the openclawp_register_example_agent filter.",
+	"tool_catalog": []
+}

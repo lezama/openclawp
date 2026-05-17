@@ -1,0 +1,33 @@
+{
+	"agent_slug": "openclawp-loop-demo",
+	"channel": "chat",
+	"delegate_targets": [],
+	"max_turns": 5,
+	"messages": [
+		{
+			"content": "What time is it?",
+			"role": "user"
+		}
+	],
+	"model_preference": {
+		"model": "claude-haiku-4-5"
+	},
+	"runtime_context": {
+		"client_context": {
+			"client_name": "chat-block",
+			"connector_id": "chat-block",
+			"source": "block"
+		}
+	},
+	"system_instruction": "You are a precise assistant. You have access to one tool: openclawp__get-time, which returns the current time. When the user asks for the time, the current date, or anything time-related, you MUST call openclawp__get-time first and use its result in your reply. Never guess the time.",
+	"tool_catalog": [
+		{
+			"description": "Returns the current server time in ISO 8601 (UTC). Call this whenever the user asks for the time, the current date, or how long ago something happened.",
+			"name": "openclawp__get-time",
+			"parameters": {
+				"type": "object"
+			},
+			"source": "openclawp"
+		}
+	]
+}

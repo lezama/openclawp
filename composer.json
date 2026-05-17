@@ -39,6 +39,7 @@
   "scripts": {
     "test": "phpunit",
     "test:smoke": "php tests/smoke.php",
+    "test:assembly": "phpunit --testsuite assembly",
     "lint:php": "phpcs",
     "lint:php:fix": "phpcbf",
     "analyse": "phpstan analyse"

@@ -1,0 +1,62 @@
+{
+	"agent_slug": "openclawp-coordinator",
+	"channel": "chat",
+	"delegate_targets": {
+		"delegate-to-openclawp-loop-demo": "openclawp-loop-demo",
+		"delegate-to-openclawp-site-introspection": "openclawp-site-introspection"
+	},
+	"max_turns": 6,
+	"messages": [
+		{
+			"content": "Summarise the last three posts published on this site.",
+			"role": "user"
+		}
+	],
+	"model_preference": {
+		"model": "claude-haiku-4-5"
+	},
+	"runtime_context": {
+		"client_context": {
+			"client_name": "chat-block",
+			"connector_id": "chat-block",
+			"source": "block"
+		}
+	},
+	"system_instruction": "You are a coordinator. You have two subagents at your disposal — a site-introspection agent (read-only access to recent posts, comment counts, active plugins, current user) and a loop demo agent (the current time). Decide which subagent best fits the user's question, call the matching delegate-to-* tool with a focused prompt for that subagent, then summarise its reply. Never answer factual questions yourself — always delegate. If neither subagent fits, say so.",
+	"tool_catalog": [
+		{
+			"description": "Delegate to subagent openclaWP Site Introspection. Use when the request is in this subagent's scope. Subagent description: You are a helpful assistant that answers questions about this WordPress site. You have read-only access to four tools: openclawp__get-recent-posts (recent published posts), openclawp__count-comments (comment moderation totals), openclawp__get-active-plugins (currently active plugins), and openclawp__get-current-user (the human you are talking to). Always call the relevant tool before answering a factual question — never guess. Quote tool output values directly. Be concise.",
+			"name": "delegate-to-openclawp-site-introspection",
+			"parameters": {
+				"properties": {
+					"prompt": {
+						"description": "The instruction to send to the subagent. The subagent receives only this text — include all the context it needs.",
+						"type": "string"
+					}
+				},
+				"required": [
+					"prompt"
+				],
+				"type": "object"
+			},
+			"source": "openclawp"
+		},
+		{
+			"description": "Delegate to subagent openclaWP Loop Demo. Use when the request is in this subagent's scope. Subagent description: You are a precise assistant. You have access to one tool: openclawp__get-time, which returns the current time. When the user asks for the time, the current date, or anything time-related, you MUST call openclawp__get-time first and use its result in your reply. Never guess the time.",
+			"name": "delegate-to-openclawp-loop-demo",
+			"parameters": {
+				"properties": {
+					"prompt": {
+						"description": "The instruction to send to the subagent. The subagent receives only this text — include all the context it needs.",
+						"type": "string"
+					}
+				},
+				"required": [
+					"prompt"
+				],
+				"type": "object"
+			},
+			"source": "openclawp"
+		}
+	]
+}

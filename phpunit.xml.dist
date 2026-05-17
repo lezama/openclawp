@@ -10,5 +10,14 @@
 		<testsuite name="unit">
 			<directory>tests/unit</directory>
 		</testsuite>
+		<testsuite name="integration">
+			<directory>tests/integration</directory>
+			<!-- The assembly suite has its own composer script + CI step. Exclude
+				 it from the broader integration suite so it doesn't run twice. -->
+			<exclude>tests/integration/prompt-assembly</exclude>
+		</testsuite>
+		<testsuite name="assembly">
+			<directory>tests/integration/prompt-assembly</directory>
+		</testsuite>
 	</testsuites>
 </phpunit>
