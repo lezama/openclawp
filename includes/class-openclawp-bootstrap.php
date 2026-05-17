@@ -89,6 +89,19 @@ final class OpenclaWP_Bootstrap {
 		if ( apply_filters( 'openclawp_register_whatsapp', false ) ) {
 			OpenclaWP_Whatsapp::register();
 		}
+
+		/**
+		 * Whether to register the Telegram Bot API ingress (REST webhook +
+		 * outbound sender + settings page).
+		 *
+		 * Off by default. Opt in with `add_filter( 'openclawp_register_telegram', '__return_true' )`
+		 * and configure credentials at openclaWP → Telegram.
+		 *
+		 * @param bool $enabled Default false.
+		 */
+		if ( apply_filters( 'openclawp_register_telegram', false ) ) {
+			OpenclaWP_Telegram::register();
+		}
 	}
 
 	public static function register_blocks(): void {
