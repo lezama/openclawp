@@ -97,6 +97,18 @@ if ( ! function_exists( 'wp_remote_post' ) ) {
 		);
 	}
 }
+if ( ! function_exists( 'sanitize_title' ) ) {
+	function sanitize_title( string $title ): string {
+		$lower = strtolower( $title );
+		$clean = preg_replace( '/[^a-z0-9]+/', '-', $lower );
+		return is_string( $clean ) ? trim( $clean, '-' ) : '';
+	}
+}
+if ( ! function_exists( 'esc_url_raw' ) ) {
+	function esc_url_raw( string $url ): string {
+		return $url;
+	}
+}
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
