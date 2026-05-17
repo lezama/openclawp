@@ -35,7 +35,17 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Abilities::register();
 		OpenclaWP_Event_Sink::register();
 		OpenclaWP_Usage_Recorder::register();
-		OpenclaWP_Mcp_Rest::register();
+		// Adapter path (WP 7.0 official mcp-adapter) is always wired —
+		// it silently no-ops when the adapter isn't loaded so older sites
+		// fall back to the legacy JSON-RPC route below.
+		OpenclaWP_Mcp_Adapter::register();
+		// Legacy hand-rolled JSON-RPC route. Gated behind OPENCLAWP_MCP_LEGACY
+		// so new sites get the official adapter only; existing deployments
+		// that already shipped external-client configs can flip the constant
+		// on for one minor version while they migrate.
+		if ( self::legacy_mcp_enabled() ) {
+			OpenclaWP_Mcp_Rest::register();
+		}
 		OpenclaWP_Rest::register();
 		OpenclaWP_Agenttic_Bridge::register();
 		OpenclaWP_Canonical_Chat_Handler::register();
@@ -94,6 +104,32 @@ final class OpenclaWP_Bootstrap {
 				'nonce'         => wp_create_nonce( 'wp_rest' ),
 			)
 		);
+	}
+
+	/**
+	 * Whether the legacy hand-rolled MCP JSON-RPC endpoint should be wired.
+	 *
+	 * Defaults to off — WP 7.0 sites get the official mcp-adapter. Sites
+	 * that already published external-client configs against the legacy
+	 * `/openclawp/v1/mcp/{slug}` route can opt in for one minor version
+	 * via the `OPENCLAWP_MCP_LEGACY` constant, the matching environment
+	 * variable, or the `openclawp_mcp_legacy_enabled` filter.
+	 */
+	public static function legacy_mcp_enabled(): bool {
+		if ( defined( 'OPENCLAWP_MCP_LEGACY' ) ) {
+			return (bool) constant( 'OPENCLAWP_MCP_LEGACY' );
+		}
+		$env = getenv( 'OPENCLAWP_MCP_LEGACY' );
+		if ( false !== $env && '' !== $env ) {
+			return in_array( strtolower( (string) $env ), array( '1', 'true', 'yes', 'on' ), true );
+		}
+
+		/**
+		 * Filter whether to expose the deprecated MCP JSON-RPC endpoint.
+		 *
+		 * @param bool $enabled Default false.
+		 */
+		return (bool) apply_filters( 'openclawp_mcp_legacy_enabled', false );
 	}
 
 	private static function has_required_dependencies(): bool {

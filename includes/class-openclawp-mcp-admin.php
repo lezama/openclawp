@@ -94,8 +94,14 @@ final class OpenclaWP_Mcp_Admin {
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html__( 'openclaWP — MCP Servers', 'openclawp' ) . '</h1>';
 		echo '<p class="description">' . esc_html(
-			__( 'Each MCP server exposes one registered agent\'s tool surface over JSON-RPC at /openclawp/v1/mcp/{slug}, so Claude Code / Cursor / VS Code can call it. Bearer tokens are shown once at creation — copy them then.', 'openclawp' )
+			__( 'Each MCP server exposes one registered agent\'s tool surface through the official WordPress mcp-adapter at /openclawp/v1/mcp-adapter/{slug}, so Claude Code / Cursor / VS Code can call it. Bearer tokens are shown once at creation — copy them then.', 'openclawp' )
 		) . '</p>';
+
+		if ( OpenclaWP_Bootstrap::legacy_mcp_enabled() ) {
+			echo '<div class="notice notice-warning inline"><p>'
+				. esc_html__( 'The legacy JSON-RPC endpoint at /openclawp/v1/mcp/{slug} is enabled via OPENCLAWP_MCP_LEGACY. It is deprecated and will be removed in the next minor release. Migrate external clients to the mcp-adapter route above.', 'openclawp' )
+				. '</p></div>';
+		}
 
 		if ( '' !== $error ) {
 			printf(
@@ -144,13 +150,19 @@ final class OpenclaWP_Mcp_Admin {
 		echo '</tr></thead><tbody>';
 
 		foreach ( $servers as $post ) {
-			$endpoint = rest_url( OpenclaWP_Mcp_Rest::NAMESPACE . '/mcp/' . $post->post_name );
-			$enabled  = OpenclaWP_Mcp_Server_Store::is_enabled( $post );
-			$last4    = OpenclaWP_Mcp_Server_Store::token_last4( $post );
+			$adapter_endpoint = rest_url( OpenclaWP_Mcp_Rest::NAMESPACE . '/mcp-adapter/' . $post->post_name );
+			$legacy_endpoint  = rest_url( OpenclaWP_Mcp_Rest::NAMESPACE . '/mcp/' . $post->post_name );
+			$legacy_enabled   = OpenclaWP_Bootstrap::legacy_mcp_enabled();
+			$enabled          = OpenclaWP_Mcp_Server_Store::is_enabled( $post );
+			$last4            = OpenclaWP_Mcp_Server_Store::token_last4( $post );
 
 			echo '<tr>';
 			echo '<td><strong>' . esc_html( $post->post_title ) . '</strong><br /><code>' . esc_html( $post->post_name ) . '</code></td>';
-			echo '<td><code>' . esc_html( $endpoint ) . '</code></td>';
+			echo '<td><code>' . esc_html( $adapter_endpoint ) . '</code>';
+			if ( $legacy_enabled ) {
+				echo '<br /><small><em>' . esc_html__( 'legacy (deprecated):', 'openclawp' ) . '</em> <code>' . esc_html( $legacy_endpoint ) . '</code></small>';
+			}
+			echo '</td>';
 			echo '<td><code>' . esc_html( OpenclaWP_Mcp_Server_Store::agent_slug( $post ) ) . '</code></td>';
 			echo '<td><code>op_…' . esc_html( $last4 ) . '</code> ';
 			self::action_button( 'rotate', $post->ID, __( 'Rotate', 'openclawp' ), 'button-link' );

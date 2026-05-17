@@ -83,6 +83,22 @@ OpenclaWP_Smoke::check( 'AGENTS_API_LOADED defined', defined( 'AGENTS_API_LOADED
 OpenclaWP_Smoke::check( 'echo ability registered', wp_has_ability( 'openclawp/echo' ) );
 OpenclaWP_Smoke::check( 'chat ability registered', wp_has_ability( 'openclawp/chat' ) );
 
+// MCP-adapter migration: assert the shim loads, the legacy gate defaults to
+// off, and adapter detection answers without throwing. Hosts on WP 7.0 will
+// see `adapter_available` flip to true automatically.
+OpenclaWP_Smoke::check(
+	'mcp-adapter shim class autoloaded',
+	class_exists( 'OpenclaWP_Mcp_Adapter' )
+);
+OpenclaWP_Smoke::check(
+	'legacy MCP JSON-RPC is gated (off by default)',
+	false === OpenclaWP_Bootstrap::legacy_mcp_enabled()
+);
+OpenclaWP_Smoke::check(
+	'mcp-adapter availability check returns bool',
+	is_bool( OpenclaWP_Mcp_Adapter::adapter_available() )
+);
+
 $cpt = get_post_type_object( 'openclawp_session' );
 OpenclaWP_Smoke::check( 'CPT openclawp_session registered', null !== $cpt );
 OpenclaWP_Smoke::check(
