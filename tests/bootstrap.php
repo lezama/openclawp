@@ -43,6 +43,37 @@ if ( ! function_exists( 'apply_filters' ) ) {
 		return null === $cb ? $value : $cb( $value, ...$args );
 	}
 }
+if ( ! function_exists( '__' ) ) {
+	// Translation passthrough. Tests assert against returned strings; the
+	// real WP `__()` is identity at runtime when no translation is loaded
+	// anyway.
+	function __( string $text, string $domain = 'default' ): string {
+		return $text;
+	}
+}
+if ( ! function_exists( 'is_wp_error' ) ) {
+	function is_wp_error( $thing ): bool {
+		return $thing instanceof \WP_Error;
+	}
+}
+if ( ! class_exists( 'WP_Error' ) ) {
+	class WP_Error {
+		public string $code;
+		public string $message;
+		public array $data;
+		public function __construct( string $code = '', string $message = '', array $data = array() ) {
+			$this->code    = $code;
+			$this->message = $message;
+			$this->data    = $data;
+		}
+		public function get_error_code(): string {
+			return $this->code;
+		}
+		public function get_error_message(): string {
+			return $this->message;
+		}
+	}
+}
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
