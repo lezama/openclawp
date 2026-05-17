@@ -42,12 +42,29 @@ final class OpenclaWP_Tools_Resolver {
 		$config           = $agent->get_default_config();
 		$tools            = isset( $config['tools'] ) && is_array( $config['tools'] ) ? $config['tools'] : array();
 		$subagents        = method_exists( $agent, 'get_subagents' ) ? $agent->get_subagents() : array();
+		$catalog_mode     = ! empty( $config['catalog_mode'] );
 		$declarations     = array();
 		$provider_decls   = array();
 		$name_to_abil     = array();
 		$delegate_targets = array();
 
-		if ( empty( $tools ) && empty( $subagents ) ) {
+		// Catalog mode: replace the full tools list with the two meta-tools
+		// (`openclawp/list-tools` + `openclawp/execute-tool`). The agent
+		// discovers and dispatches abilities on demand instead of paying
+		// for every input schema in the system prompt. Subagent delegate
+		// tools stay in the declaration list — coordinator routing is
+		// structural, not catalogable.
+		if ( $catalog_mode && class_exists( 'OpenclaWP_Tool_Discovery' ) ) {
+			$meta           = OpenclaWP_Tool_Discovery::meta_tool_resolver_payload( $tools );
+			$declarations   = $meta['declarations'];
+			$provider_decls = $meta['declarations_for_provider'];
+			$name_to_abil   = $meta['name_to_ability'];
+			// Skip the per-ability declaration loop below; fall through to
+			// the subagent branch so delegate-* tools are still added.
+			$tools = array();
+		}
+
+		if ( empty( $tools ) && empty( $subagents ) && ! $catalog_mode ) {
 			return array(
 				'declarations'              => array(),
 				'declarations_for_provider' => array(),

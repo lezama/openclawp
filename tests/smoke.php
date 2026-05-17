@@ -82,6 +82,38 @@ OpenclaWP_Smoke::check( 'OPENCLAWP_LOADED defined', defined( 'OPENCLAWP_LOADED' 
 OpenclaWP_Smoke::check( 'AGENTS_API_LOADED defined', defined( 'AGENTS_API_LOADED' ) );
 OpenclaWP_Smoke::check( 'echo ability registered', wp_has_ability( 'openclawp/echo' ) );
 OpenclaWP_Smoke::check( 'chat ability registered', wp_has_ability( 'openclawp/chat' ) );
+OpenclaWP_Smoke::check( 'list-tools ability registered', wp_has_ability( OpenclaWP_Tool_Discovery::LIST_ABILITY ) );
+OpenclaWP_Smoke::check( 'execute-tool ability registered', wp_has_ability( OpenclaWP_Tool_Discovery::EXECUTE_ABILITY ) );
+
+// list-tools should surface at least the bundled abilities (echo + chat),
+// and must not surface the meta-tools themselves.
+$catalog_listing = wp_get_ability( OpenclaWP_Tool_Discovery::LIST_ABILITY )->execute( array( 'category' => 'openclawp' ) );
+$catalog_slugs   = is_array( $catalog_listing ) && isset( $catalog_listing['tools'] )
+	? array_column( $catalog_listing['tools'], 'slug' )
+	: array();
+OpenclaWP_Smoke::check(
+	'list-tools surfaces echo + chat in openclawp category',
+	in_array( 'openclawp/echo', $catalog_slugs, true ) && in_array( 'openclawp/chat', $catalog_slugs, true )
+);
+OpenclaWP_Smoke::check(
+	'list-tools hides meta-tools from its own catalog',
+	! in_array( OpenclaWP_Tool_Discovery::LIST_ABILITY, $catalog_slugs, true )
+		&& ! in_array( OpenclaWP_Tool_Discovery::EXECUTE_ABILITY, $catalog_slugs, true )
+);
+
+// execute-tool should dispatch to the target ability and return its result.
+$exec_result = wp_get_ability( OpenclaWP_Tool_Discovery::EXECUTE_ABILITY )->execute(
+	array(
+		'tool' => 'openclawp/echo',
+		'args' => array( 'text' => 'hola' ),
+	)
+);
+OpenclaWP_Smoke::check(
+	'execute-tool dispatches and returns result',
+	is_array( $exec_result )
+		&& 'openclawp/echo' === ( $exec_result['tool'] ?? '' )
+		&& 'hola' === ( $exec_result['result']['echoed'] ?? '' )
+);
 
 $cpt = get_post_type_object( 'openclawp_session' );
 OpenclaWP_Smoke::check( 'CPT openclawp_session registered', null !== $cpt );
@@ -165,6 +197,65 @@ if ( $pin_agent ) {
 if ( $auto_agent ) {
 	$pref = $resolver->invoke( null, $auto_agent );
 	OpenclaWP_Smoke::check( 'auto config resolves to null preference', null === $pref );
+}
+
+// Catalog-mode toggle: when default_config.catalog_mode is true, the
+// resolver should swap the full tool list for just the two meta-tools.
+OpenclaWP_Smoke::register_agent(
+	'openclawp-smoke-catalog',
+	array(
+		'label'          => 'Smoke catalog',
+		'description'    => 'Smoke test for catalog mode.',
+		'default_config' => array(
+			'provider'     => 'auto',
+			'model'        => 'auto',
+			'catalog_mode' => true,
+			'tools'        => array( 'openclawp/echo', 'openclawp/chat' ),
+		),
+	)
+);
+$catalog_agent = wp_get_agent( 'openclawp-smoke-catalog' );
+OpenclaWP_Smoke::check( 'catalog agent registered', null !== $catalog_agent );
+if ( $catalog_agent ) {
+	$resolved     = OpenclaWP_Tools_Resolver::for_agent( $catalog_agent );
+	$decl_names   = array_keys( $resolved['declarations'] );
+	$list_name    = OpenclaWP_Tools_Resolver::sanitize_name( OpenclaWP_Tool_Discovery::LIST_ABILITY );
+	$execute_name = OpenclaWP_Tools_Resolver::sanitize_name( OpenclaWP_Tool_Discovery::EXECUTE_ABILITY );
+	OpenclaWP_Smoke::check(
+		'catalog mode resolves to exactly the two meta-tools',
+		2 === count( $decl_names )
+			&& in_array( $list_name, $decl_names, true )
+			&& in_array( $execute_name, $decl_names, true ),
+		json_encode( $decl_names )
+	);
+}
+
+// Toggle off: same agent without catalog_mode = full tool list (echo + chat).
+OpenclaWP_Smoke::register_agent(
+	'openclawp-smoke-no-catalog',
+	array(
+		'label'          => 'Smoke no catalog',
+		'description'    => 'Catalog-mode-off baseline.',
+		'default_config' => array(
+			'provider' => 'auto',
+			'model'    => 'auto',
+			'tools'    => array( 'openclawp/echo', 'openclawp/chat' ),
+		),
+	)
+);
+$no_catalog_agent = wp_get_agent( 'openclawp-smoke-no-catalog' );
+if ( $no_catalog_agent ) {
+	$resolved   = OpenclaWP_Tools_Resolver::for_agent( $no_catalog_agent );
+	$decl_names = array_keys( $resolved['declarations'] );
+	$echo_name  = OpenclaWP_Tools_Resolver::sanitize_name( 'openclawp/echo' );
+	$chat_name  = OpenclaWP_Tools_Resolver::sanitize_name( 'openclawp/chat' );
+	OpenclaWP_Smoke::check(
+		'catalog mode off keeps the legacy full tool list',
+		2 === count( $decl_names )
+			&& in_array( $echo_name, $decl_names, true )
+			&& in_array( $chat_name, $decl_names, true ),
+		json_encode( $decl_names )
+	);
 }
 
 OpenclaWP_Smoke::register_agent(
