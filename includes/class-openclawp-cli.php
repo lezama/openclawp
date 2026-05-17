@@ -226,6 +226,23 @@ final class OpenclaWP_CLI {
 			'agents/run-workflow and agents/validate-workflow'
 		);
 
+		$kb_table_installed = false;
+		if ( class_exists( 'OpenclaWP_Knowledge_Base_Schema' ) ) {
+			global $wpdb;
+			if ( isset( $wpdb ) ) {
+				$table = OpenclaWP_Knowledge_Base_Schema::table_name();
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$kb_table_installed = (bool) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+			}
+		}
+		self::add_check(
+			$checks,
+			'knowledge base ready',
+			$kb_table_installed && function_exists( 'wp_has_ability' ) && wp_has_ability( 'knowledge-base/search' ),
+			false,
+			$kb_table_installed ? 'wp_openclawp_kb table installed' : 'KB table missing — visit Knowledge Base settings to install'
+		);
+
 		$provider_ids = self::get_registered_provider_ids();
 		self::add_check(
 			$checks,
