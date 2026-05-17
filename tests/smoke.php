@@ -114,7 +114,6 @@ OpenclaWP_Smoke::check(
 		&& 'openclawp/echo' === ( $exec_result['tool'] ?? '' )
 		&& 'hola' === ( $exec_result['result']['echoed'] ?? '' )
 );
-
 // MCP-adapter migration: assert the shim loads, the legacy gate defaults to
 // off, and adapter detection answers without throwing. Hosts on WP 7.0 will
 // see `adapter_available` flip to true automatically.
@@ -664,6 +663,296 @@ if ( $kb_exists ) {
 		wp_delete_post( (int) $fixture_id, true );
 		OpenclaWP_Knowledge_Base_Indexer::delete_post_chunks( (int) $fixture_id );
 	}
+}
+
+// -----------------------------------------------------------------------
+// OAuth 2.1 + DCR + scopes — issue #45.
+//
+// Full flow integration test using wp_remote_request against the live REST
+// API: discovery -> DCR -> /authorize (skipped — interactive only; we mint
+// a code directly via the store) -> /token (authorization_code + PKCE) ->
+// /introspect -> MCP tools/call with the issued token, asserting allowed /
+// denied per scope.
+// -----------------------------------------------------------------------
+if ( class_exists( 'OpenclaWP_Oauth_Store' ) && class_exists( 'OpenclaWP_Mcp_Server_Store' ) ) {
+	$base = rest_url( 'openclawp/v1' );
+
+	// Make sure the OAuth post types are registered (init fires before
+	// eval-file in studio, but defensive).
+	OpenclaWP_Oauth_Store::register_post_types();
+	OpenclaWP_Mcp_Server_Store::register_post_type();
+
+	// 1) Discovery doc.
+	$discovery_resp = wp_remote_get( $base . '/.well-known/oauth-authorization-server' );
+	OpenclaWP_Smoke::check(
+		'discovery doc 200',
+		! is_wp_error( $discovery_resp ) && 200 === (int) wp_remote_retrieve_response_code( $discovery_resp )
+	);
+	$discovery = is_wp_error( $discovery_resp ) ? null : json_decode( (string) wp_remote_retrieve_body( $discovery_resp ), true );
+	OpenclaWP_Smoke::check(
+		'discovery advertises authorization_code + PKCE',
+		is_array( $discovery )
+			&& in_array( 'authorization_code', (array) ( $discovery['grant_types_supported'] ?? array() ), true )
+			&& in_array( 'S256', (array) ( $discovery['code_challenge_methods_supported'] ?? array() ), true )
+	);
+
+	// 2) Make sure an MCP server exists. Reuse or create one bound to the smoke agent.
+	$mcp_slug   = 'smoke-oauth';
+	$mcp_server = OpenclaWP_Mcp_Server_Store::find_by_slug( $mcp_slug );
+	if ( null === $mcp_server ) {
+		// Need an agent whose tools span effects. Register an inline agent with read+write+destructive abilities.
+		OpenclaWP_Smoke::register_ability(
+			'tests/read-thing',
+			array(
+				'label'               => 'Smoke read',
+				'description'         => 'returns a thing',
+				'category'            => 'agents-api',
+				'input_schema'        => array( 'type' => 'object' ),
+				'output_schema'       => array( 'type' => 'object' ),
+				'execute_callback'    => static fn (): array => array( 'ok' => true ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		OpenclaWP_Smoke::register_ability(
+			'tests/update-thing',
+			array(
+				'label'               => 'Smoke update',
+				'description'         => 'updates a thing',
+				'category'            => 'agents-api',
+				'input_schema'        => array( 'type' => 'object' ),
+				'output_schema'       => array( 'type' => 'object' ),
+				'execute_callback'    => static fn (): array => array( 'updated' => true ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		OpenclaWP_Smoke::register_agent(
+			'openclawp-smoke-oauth',
+			array(
+				'label'          => 'Smoke OAuth',
+				'description'    => 'Agent with mixed-effect abilities for the OAuth scope test.',
+				'default_config' => array(
+					'provider' => 'auto',
+					'model'    => 'auto',
+					'tools'    => array( 'tests/read-thing', 'tests/update-thing' ),
+				),
+			)
+		);
+		$created    = OpenclaWP_Mcp_Server_Store::create( 'Smoke OAuth server', $mcp_slug, 'openclawp-smoke-oauth' );
+		$mcp_server = is_wp_error( $created ) ? null : OpenclaWP_Mcp_Server_Store::find_by_slug( $mcp_slug );
+	}
+	OpenclaWP_Smoke::check( 'mcp server exists for OAuth flow', null !== $mcp_server );
+
+	// 3) DCR — self-register a public client (PKCE, no secret).
+	$dcr_resp = wp_remote_post(
+		$base . '/oauth/register',
+		array(
+			'headers' => array( 'Content-Type' => 'application/json' ),
+			'body'    => wp_json_encode(
+				array(
+					'client_name'                => 'smoke DCR client',
+					'redirect_uris'              => array( 'https://example.test/cb' ),
+					'scope'                      => 'mcp:read mcp:write',
+					'token_endpoint_auth_method' => 'none',
+					'mcp_server_slug'            => $mcp_slug,
+				)
+			),
+		)
+	);
+	$dcr_body = is_wp_error( $dcr_resp ) ? array() : (array) json_decode( (string) wp_remote_retrieve_body( $dcr_resp ), true );
+	$client_id = (string) ( $dcr_body['client_id'] ?? '' );
+	OpenclaWP_Smoke::check(
+		'DCR returns 201 + client_id',
+		! is_wp_error( $dcr_resp )
+			&& 201 === (int) wp_remote_retrieve_response_code( $dcr_resp )
+			&& '' !== $client_id
+	);
+	OpenclaWP_Smoke::check(
+		'DCR public client has no secret',
+		! isset( $dcr_body['client_secret'] )
+	);
+
+	// Helper to run an end-to-end token-issuing flow for a given scope.
+	$mint_token = static function ( string $client_id, string $scope_string, string $mcp_slug ) {
+		// PKCE pair.
+		$verifier  = rtrim( strtr( base64_encode( random_bytes( 32 ) ), '+/', '-_' ), '=' );
+		$challenge = rtrim( strtr( base64_encode( hash( 'sha256', $verifier, true ) ), '+/', '-_' ), '=' );
+
+		// Mint the authorization code directly via the store (skips the
+		// interactive consent screen; the screen + redirect is covered manually).
+		$scopes = OpenclaWP_Oauth_Scope::parse_scope_string( $scope_string );
+		$code   = OpenclaWP_Oauth_Store::issue_authorization_code(
+			$client_id,
+			get_current_user_id(),
+			'https://example.test/cb',
+			$scopes,
+			$mcp_slug,
+			$challenge,
+			'S256'
+		);
+
+		$resp = wp_remote_post(
+			rest_url( 'openclawp/v1/oauth/token' ),
+			array(
+				'body' => array(
+					'grant_type'    => 'authorization_code',
+					'code'          => $code,
+					'redirect_uri'  => 'https://example.test/cb',
+					'client_id'     => $client_id,
+					'code_verifier' => $verifier,
+				),
+			)
+		);
+		$body = is_wp_error( $resp ) ? array() : (array) json_decode( (string) wp_remote_retrieve_body( $resp ), true );
+		return array(
+			'status' => is_wp_error( $resp ) ? 0 : (int) wp_remote_retrieve_response_code( $resp ),
+			'body'   => $body,
+		);
+	};
+
+	// 4) Exchange for an `mcp:read`-only access token.
+	$read_exchange = $mint_token( $client_id, 'mcp:read', $mcp_slug );
+	OpenclaWP_Smoke::check(
+		'token exchange returns 200 + access_token (read scope)',
+		200 === $read_exchange['status'] && ! empty( $read_exchange['body']['access_token'] )
+	);
+	$read_token = (string) ( $read_exchange['body']['access_token'] ?? '' );
+	OpenclaWP_Smoke::check(
+		'token exchange returns scope=mcp:read',
+		'mcp:read' === (string) ( $read_exchange['body']['scope'] ?? '' )
+	);
+
+	// 5) Introspection — requires no client auth here because we registered as `none`.
+	$introspect = wp_remote_post(
+		$base . '/oauth/introspect',
+		array(
+			'body' => array(
+				'token'     => $read_token,
+				'client_id' => $client_id,
+			),
+		)
+	);
+	$introspect_body = is_wp_error( $introspect ) ? array() : (array) json_decode( (string) wp_remote_retrieve_body( $introspect ), true );
+	OpenclaWP_Smoke::check(
+		'introspect returns active=true + scope',
+		! is_wp_error( $introspect )
+			&& true === ( $introspect_body['active'] ?? false )
+			&& 'mcp:read' === (string) ( $introspect_body['scope'] ?? '' )
+	);
+
+	// 6) Call MCP tools/list — `tests/read-thing` should appear, `tests/update-thing` should NOT.
+	$jsonrpc = static function ( string $token, array $payload ) use ( $mcp_slug ) {
+		return wp_remote_post(
+			rest_url( 'openclawp/v1/mcp/' . $mcp_slug ),
+			array(
+				'headers' => array(
+					'Authorization' => 'Bearer ' . $token,
+					'Content-Type'  => 'application/json',
+				),
+				'body'    => wp_json_encode( $payload ),
+			)
+		);
+	};
+
+	$tools_resp = $jsonrpc( $read_token, array( 'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list', 'params' => array() ) );
+	$tools_body = is_wp_error( $tools_resp ) ? array() : (array) json_decode( (string) wp_remote_retrieve_body( $tools_resp ), true );
+	$tool_names = array_map(
+		static fn ( $t ): string => (string) ( $t['name'] ?? '' ),
+		(array) ( $tools_body['result']['tools'] ?? array() )
+	);
+	OpenclaWP_Smoke::check(
+		'tools/list scoped to read shows the read ability',
+		in_array( 'tests__read-thing', $tool_names, true )
+	);
+	OpenclaWP_Smoke::check(
+		'tools/list scoped to read hides the write ability',
+		! in_array( 'tests__update-thing', $tool_names, true )
+	);
+
+	// 7) Try to call the write tool with read scope — must be denied with insufficient_scope text.
+	$call_write_resp = $jsonrpc(
+		$read_token,
+		array(
+			'jsonrpc' => '2.0',
+			'id'      => 2,
+			'method'  => 'tools/call',
+			'params'  => array(
+				'name'      => 'tests__update-thing',
+				'arguments' => array(),
+			),
+		)
+	);
+	$call_write_body = is_wp_error( $call_write_resp ) ? array() : (array) json_decode( (string) wp_remote_retrieve_body( $call_write_resp ), true );
+	$write_result    = (array) ( $call_write_body['result'] ?? array() );
+	$write_text      = (string) ( $write_result['content'][0]['text'] ?? '' );
+	OpenclaWP_Smoke::check(
+		'tools/call write denied for mcp:read token',
+		true === ( $write_result['isError'] ?? false ) && false !== strpos( $write_text, 'insufficient_scope' )
+	);
+
+	// 8) Call the read tool — must be allowed.
+	$call_read_resp = $jsonrpc(
+		$read_token,
+		array(
+			'jsonrpc' => '2.0',
+			'id'      => 3,
+			'method'  => 'tools/call',
+			'params'  => array(
+				'name'      => 'tests__read-thing',
+				'arguments' => array(),
+			),
+		)
+	);
+	$call_read_body = is_wp_error( $call_read_resp ) ? array() : (array) json_decode( (string) wp_remote_retrieve_body( $call_read_resp ), true );
+	$read_result    = (array) ( $call_read_body['result'] ?? array() );
+	OpenclaWP_Smoke::check(
+		'tools/call read allowed for mcp:read token',
+		isset( $read_result['isError'] ) && false === $read_result['isError']
+	);
+
+	// 9) Mint a fresh token with mcp:write and confirm it can call the write tool.
+	$write_exchange = $mint_token( $client_id, 'mcp:write', $mcp_slug );
+	OpenclaWP_Smoke::check(
+		'token exchange for mcp:write succeeds',
+		200 === $write_exchange['status'] && ! empty( $write_exchange['body']['access_token'] )
+	);
+	$write_token = (string) ( $write_exchange['body']['access_token'] ?? '' );
+
+	$call_write2 = $jsonrpc(
+		$write_token,
+		array(
+			'jsonrpc' => '2.0',
+			'id'      => 4,
+			'method'  => 'tools/call',
+			'params'  => array(
+				'name'      => 'tests__update-thing',
+				'arguments' => array(),
+			),
+		)
+	);
+	$call_write2_body = is_wp_error( $call_write2 ) ? array() : (array) json_decode( (string) wp_remote_retrieve_body( $call_write2 ), true );
+	$write2_result    = (array) ( $call_write2_body['result'] ?? array() );
+	OpenclaWP_Smoke::check(
+		'tools/call write allowed for mcp:write token',
+		isset( $write2_result['isError'] ) && false === $write2_result['isError']
+	);
+
+	// 10) Revoke the write token and confirm the next call is rejected (no perm).
+	$revoke = wp_remote_post(
+		$base . '/oauth/revoke',
+		array( 'body' => array( 'token' => $write_token ) )
+	);
+	OpenclaWP_Smoke::check(
+		'revoke endpoint returns 200',
+		! is_wp_error( $revoke ) && 200 === (int) wp_remote_retrieve_response_code( $revoke )
+	);
+	$after_revoke = $jsonrpc(
+		$write_token,
+		array( 'jsonrpc' => '2.0', 'id' => 5, 'method' => 'tools/list', 'params' => array() )
+	);
+	OpenclaWP_Smoke::check(
+		'tools/list rejects revoked token',
+		! is_wp_error( $after_revoke ) && 401 === (int) wp_remote_retrieve_response_code( $after_revoke )
+	);
 }
 
 $failed = OpenclaWP_Smoke::summarize();

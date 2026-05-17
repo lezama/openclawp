@@ -7,10 +7,21 @@
  * `initialize`, `tools/list`, `tools/call`. Resource and prompt
  * primitives return JSON-RPC error -32601 with a follow-up pointer.
  *
- * Auth: bearer token compared against the per-server hash from
- * `OpenclaWP_Mcp_Server_Store`. Admins logged into wp-admin with
- * `manage_options` are allowed through without a token so a quick
- * curl/browser test from the same session works.
+ * Auth (default — issue #45):
+ *   - OAuth 2.1 bearer token issued by `OpenclaWP_Oauth_Server`.
+ *   - Token must be active, unexpired, unrevoked, and bound to this MCP
+ *     server slug (audience binding — analogue of RFC 8707).
+ *   - Token scope decides which abilities the client may call; the
+ *     `tools/list` response is filtered to match (clients only see what
+ *     they can call) and `tools/call` is hard-gated per-call.
+ *
+ * Auth (legacy — opt-in via `define( 'OPENCLAWP_MCP_LEGACY_AUTH', true )`):
+ *   - Bearer token compared against the per-server hash from
+ *     `OpenclaWP_Mcp_Server_Store`. Logs a deprecation `error_log()` per
+ *     request so the site owner notices the warning in real time.
+ *
+ * Admins logged into wp-admin with `manage_options` are allowed through
+ * without a token so a curl from the same session works.
  *
  * @package OpenclaWP
  */
@@ -67,7 +78,38 @@ final class OpenclaWP_Mcp_Rest {
 		if ( '' === $presented ) {
 			return false;
 		}
-		return OpenclaWP_Mcp_Server_Store::verify_token( $server, $presented );
+
+		// OAuth 2.1 path (default).
+		$token = OpenclaWP_Oauth_Store::find_token_by_value( $presented, OpenclaWP_Oauth_Store::KIND_ACCESS );
+		if ( null !== $token ) {
+			// Audience binding: token must match this MCP server slug.
+			if ( OpenclaWP_Oauth_Store::token_mcp_server_slug( $token ) !== $server->post_name ) {
+				return false;
+			}
+			OpenclaWP_Oauth_Store::touch_token( $token );
+			$request->set_param( '_openclawp_oauth_token_id', $token->ID );
+			return true;
+		}
+
+		// Legacy bearer path — opt-in via constant.
+		if ( self::legacy_auth_enabled() ) {
+			if ( OpenclaWP_Mcp_Server_Store::verify_token( $server, $presented ) ) {
+				// Surface a deprecation warning per the migration plan.
+				error_log( 'openclaWP: legacy bearer MCP auth in use (set OPENCLAWP_MCP_LEGACY_AUTH=false once OAuth is rolled out)' );
+				$request->set_param( '_openclawp_oauth_legacy', 1 );
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static function legacy_auth_enabled(): bool {
+		if ( defined( 'OPENCLAWP_MCP_LEGACY_AUTH' ) ) {
+			return (bool) constant( 'OPENCLAWP_MCP_LEGACY_AUTH' );
+		}
+		$env = getenv( 'OPENCLAWP_MCP_LEGACY_AUTH' );
+		return false !== $env && '' !== $env && '0' !== $env && 'false' !== strtolower( (string) $env );
 	}
 
 	/**
@@ -102,7 +144,7 @@ final class OpenclaWP_Mcp_Rest {
 		$is_notification = ! array_key_exists( 'id', $rpc );
 
 		return self::with_deprecation_headers(
-			self::dispatch( $server, $id, $method, $params, $is_notification )
+			self::dispatch( $server, $id, $method, $params, $is_notification, $request )
 		);
 	}
 
@@ -147,7 +189,7 @@ final class OpenclaWP_Mcp_Rest {
 		}
 	}
 
-	private static function dispatch( \WP_Post $server, $id, string $method, array $params, bool $is_notification ): \WP_REST_Response {
+	private static function dispatch( \WP_Post $server, $id, string $method, array $params, bool $is_notification, \WP_REST_Request $request ): \WP_REST_Response {
 		try {
 			switch ( $method ) {
 				case 'initialize':
@@ -157,10 +199,10 @@ final class OpenclaWP_Mcp_Rest {
 					return new \WP_REST_Response( null, 202 );
 
 				case 'tools/list':
-					return self::ok( $id, self::tools_list_result( $server ) );
+					return self::ok( $id, self::tools_list_result( $server, $request ) );
 
 				case 'tools/call':
-					$result = self::tools_call_result( $server, $params );
+					$result = self::tools_call_result( $server, $params, $request );
 					if ( $result instanceof \WP_REST_Response ) {
 						return $result;
 					}
@@ -207,20 +249,66 @@ final class OpenclaWP_Mcp_Rest {
 		);
 	}
 
-	private static function tools_list_result( \WP_Post $server ): array {
+	private static function tools_list_result( \WP_Post $server, ?\WP_REST_Request $request = null ): array {
 		$agent_slug = OpenclaWP_Mcp_Server_Store::agent_slug( $server );
 		$agent      = function_exists( 'wp_get_agent' ) ? wp_get_agent( $agent_slug ) : null;
 		if ( null === $agent ) {
 			return array( 'tools' => array() );
 		}
 		$allowlist = OpenclaWP_Mcp_Server_Store::tool_allowlist( $server );
-		return array( 'tools' => OpenclaWP_Mcp_Tool_Translator::translate( $agent, $allowlist ) );
+		$tools     = OpenclaWP_Mcp_Tool_Translator::translate( $agent, $allowlist );
+
+		// Filter by token scope. If the caller is an admin session or legacy
+		// bearer client, show everything.
+		$scopes = self::request_scopes( $request );
+		if ( null === $scopes ) {
+			return array( 'tools' => $tools );
+		}
+
+		$resolved   = OpenclaWP_Tools_Resolver::for_agent( $agent );
+		$name_map   = (array) ( $resolved['name_to_ability'] ?? array() );
+		$filtered   = array();
+		foreach ( $tools as $tool ) {
+			$ability_name = (string) ( $name_map[ $tool['name'] ] ?? '' );
+			if ( '' === $ability_name ) {
+				// Subagent delegations route through `agents/chat`. They inherit
+				// the parent's effect tier — treat as write to be conservative.
+				$effect = OpenclaWP_Oauth_Scope::EFFECT_WRITE;
+			} else {
+				$effect = OpenclaWP_Oauth_Scope::effect_for_ability( $ability_name );
+			}
+			if ( OpenclaWP_Oauth_Scope::scopes_permit_effect( $scopes, $effect ) ) {
+				$filtered[] = $tool;
+			}
+		}
+		return array( 'tools' => $filtered );
+	}
+
+	/**
+	 * Return the granted scopes for the current request, or null when the
+	 * caller wasn't authenticated via OAuth (admin session / legacy bearer).
+	 *
+	 * @return array<int, string>|null
+	 */
+	private static function request_scopes( ?\WP_REST_Request $request ): ?array {
+		if ( null === $request ) {
+			return null;
+		}
+		$token_id = (int) $request->get_param( '_openclawp_oauth_token_id' );
+		if ( $token_id <= 0 ) {
+			return null;
+		}
+		$token = get_post( $token_id );
+		if ( ! $token instanceof \WP_Post ) {
+			return null;
+		}
+		return OpenclaWP_Oauth_Store::token_scopes( $token );
 	}
 
 	/**
 	 * @return array{content:array, isError:bool}|\WP_REST_Response
 	 */
-	private static function tools_call_result( \WP_Post $server, array $params ) {
+	private static function tools_call_result( \WP_Post $server, array $params, ?\WP_REST_Request $request = null ) {
 		$name = isset( $params['name'] ) ? (string) $params['name'] : '';
 		if ( '' === $name ) {
 			return new \WP_REST_Response(
@@ -246,6 +334,33 @@ final class OpenclaWP_Mcp_Rest {
 				'isError' => true,
 				'content' => array( array( 'type' => 'text', 'text' => sprintf( 'tool `%s` is not in this server\'s allowlist', $name ) ) ),
 			);
+		}
+
+		// Scope enforcement (OAuth path only — admin sessions / legacy bearer
+		// bypass scopes since they had no scope grant).
+		$scopes = self::request_scopes( $request );
+		if ( null !== $scopes ) {
+			$name_map     = (array) ( $resolved['name_to_ability'] ?? array() );
+			$ability_name = (string) ( $name_map[ $name ] ?? '' );
+			$effect       = '' === $ability_name
+				? OpenclaWP_Oauth_Scope::EFFECT_WRITE
+				: OpenclaWP_Oauth_Scope::effect_for_ability( $ability_name );
+			if ( ! OpenclaWP_Oauth_Scope::scopes_permit_effect( $scopes, $effect ) ) {
+				return array(
+					'isError' => true,
+					'content' => array(
+						array(
+							'type' => 'text',
+							'text' => sprintf(
+								'insufficient_scope: tool `%s` requires effect `%s`, your token grants scopes [%s]',
+								$name,
+								$effect,
+								implode( ' ', $scopes )
+							),
+						),
+					),
+				);
+			}
 		}
 
 		$executor = new OpenclaWP_Tool_Executor(
