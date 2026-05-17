@@ -34,6 +34,7 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Routine_Registrar::register();
 		OpenclaWP_Abilities::register();
 		OpenclaWP_Event_Sink::register();
+		OpenclaWP_Tracer::register();
 		OpenclaWP_Usage_Recorder::register();
 		OpenclaWP_Mcp_Rest::register();
 		OpenclaWP_Rest::register();

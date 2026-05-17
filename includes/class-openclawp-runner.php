@@ -121,6 +121,26 @@ final class OpenclaWP_Runner {
 			return $result;
 		}
 
+		// Stamp session/agent/user/channel onto every span emitted during
+		// this turn. Tracer is a no-op when no OTLP endpoint is configured,
+		// so this is cheap when disabled.
+		if ( class_exists( 'OpenclaWP_Tracer' ) ) {
+			$channel = '';
+			if ( isset( $runtime_context['channel'] ) && is_string( $runtime_context['channel'] ) ) {
+				$channel = $runtime_context['channel'];
+			} elseif ( isset( $runtime_context['client_context']['channel'] ) && is_string( $runtime_context['client_context']['channel'] ) ) {
+				$channel = $runtime_context['client_context']['channel'];
+			}
+			OpenclaWP_Tracer::set_runtime_context(
+				array(
+					'openclawp.session.id' => $session_id,
+					'openclawp.agent.slug' => $agent_slug,
+					'openclawp.user.id'    => (string) $user_id,
+					'openclawp.channel'    => $channel,
+				)
+			);
+		}
+
 		$messages   = $session['messages'];
 		$messages[] = array(
 			'role'    => 'user',
