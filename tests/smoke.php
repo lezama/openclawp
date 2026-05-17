@@ -463,6 +463,63 @@ if ( class_exists( 'OpenclaWP_Whatsapp' ) ) {
 	OpenclaWP_Smoke::check( 'extracted text is correct', 'hola' === ( $messages[0]['text'] ?? '' ) );
 }
 
+// Tool-call confirmation gate (#40) — CPT + REST surface present.
+OpenclaWP_Smoke::check(
+	'CPT openclawp_decision registered',
+	null !== get_post_type_object( 'openclawp_decision' )
+);
+
+OpenclaWP_Smoke::check(
+	'effect helper classifies read-prefixed abilities as read',
+	'read' === OpenclaWP_Tool_Effects::for_ability( 'openclawp/get-recent-posts' )
+);
+OpenclaWP_Smoke::check(
+	'effect helper classifies delete-prefixed abilities as destructive',
+	'destructive' === OpenclaWP_Tool_Effects::for_ability( 'openclawp/delete-post' )
+);
+OpenclaWP_Smoke::check(
+	'requires_confirmation default threshold gates destructive',
+	OpenclaWP_Tool_Effects::requires_confirmation( 'destructive', OpenclaWP_Tool_Effects::DEFAULT_THRESHOLD )
+);
+OpenclaWP_Smoke::check(
+	'requires_confirmation default threshold does not gate read',
+	false === OpenclaWP_Tool_Effects::requires_confirmation( 'read', OpenclaWP_Tool_Effects::DEFAULT_THRESHOLD )
+);
+
+// Round-trip a pending decision through the store.
+$pending = OpenclaWP_Decisions_Store::create_pending(
+	array(
+		'session_id' => 'smoke-session',
+		'user_id'    => 1,
+		'agent_slug' => 'smoke-agent',
+		'ability'    => 'openclawp/delete-post',
+		'effect'     => 'destructive',
+		'threshold'  => 'destructive',
+		'parameters' => array( 'id' => 42 ),
+	)
+);
+OpenclaWP_Smoke::check( 'create_pending returns a decision id', is_array( $pending ) && '' !== ( $pending['decision_id'] ?? '' ) );
+
+if ( is_array( $pending ) ) {
+	$resolved = OpenclaWP_Decisions_Store::resolve( $pending['decision_id'], OpenclaWP_Decisions_Store::STATUS_ALLOWED, 1 );
+	OpenclaWP_Smoke::check( 'resolve marks a pending decision as allowed', true === $resolved );
+
+	$re_resolve = OpenclaWP_Decisions_Store::resolve( $pending['decision_id'], OpenclaWP_Decisions_Store::STATUS_DENIED, 1 );
+	OpenclaWP_Smoke::check( 'resolving an already-resolved decision returns false', false === $re_resolve );
+
+	// Always-allow round-trip.
+	OpenclaWP_Tool_Effects::add_always_allow( 1, 'openclawp/delete-post' );
+	OpenclaWP_Smoke::check(
+		'add_always_allow persists in user_meta',
+		OpenclaWP_Tool_Effects::user_allows_always( 1, 'openclawp/delete-post' )
+	);
+	OpenclaWP_Tool_Effects::remove_always_allow( 1, 'openclawp/delete-post' );
+	OpenclaWP_Smoke::check(
+		'remove_always_allow clears the entry',
+		false === OpenclaWP_Tool_Effects::user_allows_always( 1, 'openclawp/delete-post' )
+	);
+}
+
 $failed = OpenclaWP_Smoke::summarize();
 if ( $failed > 0 ) {
 	exit( 1 );

@@ -1,0 +1,62 @@
+/*
+ * Inline confirmation card styling for the chat block.
+ *
+ * Scoped under .openclawp-confirmation-card. Uses WordPress admin colors so
+ * the card looks native both inside wp-admin and on the front end.
+ */
+
+.openclawp-confirmation-card {
+	border: 1px solid #ffb900;
+	background: #fff8e5;
+	border-radius: 4px;
+	padding: 12px 16px;
+	margin: 12px 0;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.openclawp-confirmation-card__title {
+	margin: 0 0 8px;
+	font-size: 14px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.openclawp-confirmation-card__body {
+	margin: 0 0 12px;
+	font-size: 13px;
+	color: #2c3338;
+}
+
+.openclawp-confirmation-card__body code {
+	background: rgba(0, 0, 0, 0.06);
+	padding: 1px 4px;
+	border-radius: 2px;
+	font-size: 12px;
+}
+
+.openclawp-confirmation-card__details {
+	margin-bottom: 12px;
+}
+
+.openclawp-confirmation-card__details summary {
+	cursor: pointer;
+	font-size: 12px;
+	color: #50575e;
+}
+
+.openclawp-confirmation-card__details pre {
+	margin: 8px 0 0;
+	padding: 8px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 2px;
+	font-size: 11px;
+	max-height: 240px;
+	overflow: auto;
+}
+
+.openclawp-confirmation-card__actions {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
