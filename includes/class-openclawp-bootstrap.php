@@ -33,6 +33,7 @@ final class OpenclaWP_Bootstrap {
 		add_action( 'init', array( 'OpenclaWP_Decisions_Store', 'register_post_type' ), 5 );
 		add_action( 'init', array( 'OpenclaWP_Custom_Tools_Store', 'register_post_type' ), 5 );
 		add_action( 'init', array( 'OpenclaWP_Knowledge_Base_Schema', 'maybe_install' ), 5 );
+		add_action( 'init', array( 'OpenclaWP_Oauth_Store', 'register_post_types' ), 5 );
 		add_action( 'init', array( __CLASS__, 'register_blocks' ), 10 );
 		OpenclaWP_Agent_Registrar::register();
 		OpenclaWP_Routine_Registrar::register();
@@ -55,6 +56,7 @@ final class OpenclaWP_Bootstrap {
 		if ( self::legacy_mcp_enabled() ) {
 			OpenclaWP_Mcp_Rest::register();
 		}
+		OpenclaWP_Oauth_Server::register();
 		OpenclaWP_Rest::register();
 		OpenclaWP_Decisions_Rest::register();
 		OpenclaWP_Agenttic_Bridge::register();
@@ -72,6 +74,7 @@ final class OpenclaWP_Bootstrap {
 			OpenclaWP_Decisions_Admin::register();
 			OpenclaWP_Custom_Tools_Admin::register();
 			OpenclaWP_Knowledge_Base_Admin::register();
+			OpenclaWP_Oauth_Admin::register();
 		}
 
 		/**
