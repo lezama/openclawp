@@ -49,6 +49,8 @@ final class OpenclaWP_Abilities {
 
 		self::register_echo_ability();
 		self::register_chat_ability();
+		self::register_list_tools_ability();
+		self::register_execute_tool_ability();
 
 		/**
 		 * Whether to register the bundled loop-demo fixtures
@@ -155,6 +157,93 @@ final class OpenclaWP_Abilities {
 				'execute_callback'    => static function ( array $args ): array {
 					return array( 'echoed' => (string) ( $args['text'] ?? '' ) );
 				},
+				'permission_callback' => '__return_true',
+			)
+		);
+	}
+
+	private static function register_list_tools_ability(): void {
+		if ( wp_has_ability( OpenclaWP_Tool_Discovery::LIST_ABILITY ) ) {
+			return;
+		}
+
+		wp_register_ability(
+			OpenclaWP_Tool_Discovery::LIST_ABILITY,
+			array(
+				'label'               => __( 'List tools', 'openclawp' ),
+				'description'         => OpenclaWP_Tool_Discovery::list_tools_description(),
+				'category'            => 'openclawp',
+				'input_schema'        => OpenclaWP_Tool_Discovery::list_tools_input_schema(),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'properties' => array(
+						'tools'       => array(
+							'type'        => 'array',
+							'description' => 'Page of tools, each with slug + category + 1-line description.',
+							'items'       => array(
+								'type'       => 'object',
+								'properties' => array(
+									'slug'        => array( 'type' => 'string' ),
+									'category'    => array( 'type' => 'string' ),
+									'description' => array( 'type' => 'string' ),
+									'label'       => array( 'type' => 'string' ),
+								),
+							),
+						),
+						'next_cursor' => array(
+							'type'        => array( 'string', 'null' ),
+							'description' => 'Pass this back as `cursor` to fetch the next page. Null when the catalog is exhausted.',
+						),
+						'total'       => array(
+							'type'        => 'integer',
+							'description' => 'Total tools visible to this caller (pre-pagination).',
+						),
+					),
+					'required'   => array( 'tools' ),
+				),
+				'execute_callback'    => static function ( array $args ): array {
+					return OpenclaWP_Tool_Discovery::list_tools( $args );
+				},
+				'permission_callback' => '__return_true',
+			)
+		);
+	}
+
+	private static function register_execute_tool_ability(): void {
+		if ( wp_has_ability( OpenclaWP_Tool_Discovery::EXECUTE_ABILITY ) ) {
+			return;
+		}
+
+		wp_register_ability(
+			OpenclaWP_Tool_Discovery::EXECUTE_ABILITY,
+			array(
+				'label'               => __( 'Execute tool', 'openclawp' ),
+				'description'         => OpenclaWP_Tool_Discovery::execute_tool_description(),
+				'category'            => 'openclawp',
+				'input_schema'        => OpenclaWP_Tool_Discovery::execute_tool_input_schema(),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'properties' => array(
+						'tool'   => array(
+							'type'        => 'string',
+							'description' => 'The ability slug that was invoked.',
+						),
+						'result' => array(
+							'description' => 'Whatever the target ability returned.',
+						),
+					),
+					'required'   => array( 'tool', 'result' ),
+				),
+				'execute_callback'    => static function ( array $args ) {
+					return OpenclaWP_Tool_Discovery::execute_tool( $args );
+				},
+				/**
+				 * Permission is delegated to the target ability — `execute-tool`
+				 * itself is a router. The dispatched ability's own
+				 * `permission_callback` runs inside its `execute()`. We keep
+				 * the router open so the abilities API can dispatch, and rely
+				 * on each ability to gate its own access.
+				 */
 				'permission_callback' => '__return_true',
 			)
 		);
