@@ -44,9 +44,6 @@ if ( ! function_exists( 'apply_filters' ) ) {
 	}
 }
 if ( ! function_exists( '__' ) ) {
-	// Translation passthrough. Tests assert against returned strings; the
-	// real WP `__()` is identity at runtime when no translation is loaded
-	// anyway.
 	function __( string $text, string $domain = 'default' ): string {
 		return $text;
 	}
@@ -82,11 +79,13 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		public function get_error_message(): string {
 			return $this->message;
 		}
+		public function get_error_data() {
+			return $this->data;
+		}
 	}
 }
 if ( ! function_exists( 'wp_remote_post' ) ) {
 	function wp_remote_post( string $url, array $args = array() ) {
-		// Capture for assertion; return a synthetic OTLP-collector response.
 		$GLOBALS['openclawp_test_http_capture'][] = array(
 			'url'  => $url,
 			'args' => $args,
@@ -102,6 +101,16 @@ if ( ! function_exists( 'sanitize_title' ) ) {
 		$lower = strtolower( $title );
 		$clean = preg_replace( '/[^a-z0-9]+/', '-', $lower );
 		return is_string( $clean ) ? trim( $clean, '-' ) : '';
+	}
+}
+if ( ! function_exists( 'sanitize_key' ) ) {
+	function sanitize_key( string $key ): string {
+		return strtolower( (string) preg_replace( '/[^a-z0-9_\-]/i', '', $key ) );
+	}
+}
+if ( ! function_exists( 'wp_http_validate_url' ) ) {
+	function wp_http_validate_url( string $url ) {
+		return filter_var( $url, FILTER_VALIDATE_URL ) ? $url : false;
 	}
 }
 if ( ! function_exists( 'esc_url_raw' ) ) {

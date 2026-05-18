@@ -536,6 +536,81 @@ if ( is_array( $pending ) ) {
 	);
 }
 
+// Custom tools: round-trip a tool through the store + registrar and verify
+// the ability shows up and {{parameter}} substitution survives an injection
+// attempt. Acceptance criteria for issue #43.
+if ( class_exists( 'OpenclaWP_Custom_Tools_Store' ) ) {
+	OpenclaWP_Smoke::check(
+		'CPT openclawp_tool registered',
+		null !== get_post_type_object( OpenclaWP_Custom_Tools_Store::POST_TYPE )
+	);
+
+	// Clean up any leftover smoke-test tool from a previous run.
+	$existing = OpenclaWP_Custom_Tools_Store::find_by_slug( 'smoke-http-tool' );
+	if ( null !== $existing ) {
+		OpenclaWP_Custom_Tools_Store::delete( $existing->ID );
+	}
+
+	$created = OpenclaWP_Custom_Tools_Store::create(
+		array(
+			'label'       => 'Smoke HTTP tool',
+			'slug'        => 'smoke-http-tool',
+			'description' => 'Smoke test for HTTP tool authoring.',
+			'spec'        => array(
+				'type'         => OpenclaWP_Custom_Tools_Store::TYPE_HTTP,
+				'input_schema' => array(
+					'type'       => 'object',
+					'properties' => array(
+						'msg' => array( 'type' => 'string' ),
+					),
+				),
+				'http'         => array(
+					'method'    => 'POST',
+					'url'       => 'https://example.invalid/api',
+					'headers'   => array(),
+					'body_type' => 'json',
+					'body'      => '{"text": "{{msg}}"}',
+				),
+				'auth'         => array( 'mode' => OpenclaWP_Custom_Tools_Store::AUTH_NONE ),
+				'effect'       => OpenclaWP_Custom_Tools_Store::EFFECT_WRITE,
+				'output'       => array( 'mode' => OpenclaWP_Custom_Tools_Store::OUTPUT_RAW ),
+				'allowed_roles' => array( 'administrator' ),
+			),
+		)
+	);
+	OpenclaWP_Smoke::check( 'custom tool create returns int id', is_int( $created ) && $created > 0 );
+
+	$post = get_post( (int) $created );
+	OpenclaWP_Smoke::check( 'custom tool post exists', $post instanceof WP_Post );
+	OpenclaWP_Smoke::check( 'custom tool revisions supported', post_type_supports( OpenclaWP_Custom_Tools_Store::POST_TYPE, 'revisions' ) );
+
+	// Force registration on this request (the registrar normally fires on
+	// `wp_abilities_api_init`, which has already fired by the time eval-file
+	// executes this script).
+	OpenclaWP_Custom_Tools_Registrar::register_one( $post );
+
+	$ability_name = OpenclaWP_Custom_Tools_Registrar::ability_name_for_slug( $post->post_name );
+	OpenclaWP_Smoke::check(
+		'custom tool registered as an ability',
+		wp_has_ability( $ability_name ),
+		'expected ability ' . $ability_name
+	);
+
+	// Substitution: an injection-attempt input must not be able to forge a
+	// second top-level JSON key on the outgoing body.
+	$injected_body = OpenclaWP_Custom_Tools_Executor::build_json_body(
+		'{"text": "{{msg}}"}',
+		array( 'msg' => 'hi", "is_admin": true, "_": "' )
+	);
+	$decoded = is_string( $injected_body ) ? json_decode( $injected_body, true ) : null;
+	OpenclaWP_Smoke::check(
+		'JSON injection attempt does not forge sibling keys',
+		is_array( $decoded ) && ! array_key_exists( 'is_admin', $decoded ) && 'hi", "is_admin": true, "_": "' === ( $decoded['text'] ?? null )
+	);
+
+	OpenclaWP_Custom_Tools_Store::delete( (int) $created );
+}
+
 $failed = OpenclaWP_Smoke::summarize();
 if ( $failed > 0 ) {
 	exit( 1 );
