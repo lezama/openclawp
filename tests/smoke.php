@@ -611,6 +611,61 @@ if ( class_exists( 'OpenclaWP_Custom_Tools_Store' ) ) {
 	OpenclaWP_Custom_Tools_Store::delete( (int) $created );
 }
 
+// Knowledge base — schema, ability, indexer round-trip.
+OpenclaWP_Knowledge_Base_Schema::maybe_install();
+
+global $wpdb;
+$kb_table = OpenclaWP_Knowledge_Base_Schema::table_name();
+$kb_exists = (bool) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $kb_table ) );
+OpenclaWP_Smoke::check( 'KB table installed', $kb_exists, $kb_table );
+OpenclaWP_Smoke::check(
+	'knowledge-base/search ability registered',
+	wp_has_ability( 'knowledge-base/search' )
+);
+
+if ( $kb_exists ) {
+	// Pin the smoke post type so on_save_post() takes the indexing branch.
+	OpenclaWP_Knowledge_Base_Sources::save(
+		array(
+			'post_types' => array( 'post' ),
+			'urls'       => array(),
+		)
+	);
+
+	$fixture_id = wp_insert_post(
+		array(
+			'post_type'    => 'post',
+			'post_status'  => 'publish',
+			'post_title'   => 'Smoke pineapple policy',
+			'post_content' => "We sell pineapple-flavoured ice cream year-round.\n\nReturns are accepted within 30 days for any reason.",
+		),
+		true
+	);
+	OpenclaWP_Smoke::check( 'KB fixture post inserted', ! is_wp_error( $fixture_id ) && (int) $fixture_id > 0 );
+
+	if ( ! is_wp_error( $fixture_id ) && (int) $fixture_id > 0 ) {
+		$chunks = OpenclaWP_Knowledge_Base_Indexer::index_post( (int) $fixture_id );
+		OpenclaWP_Smoke::check( 'KB indexer wrote at least one chunk', $chunks >= 1, 'chunks=' . $chunks );
+
+		$results = OpenclaWP_Knowledge_Base_Search::search( 'pineapple', 5 );
+		OpenclaWP_Smoke::check( 'KB search returns the fixture post', ! empty( $results ) );
+		if ( ! empty( $results ) ) {
+			$top = $results[0];
+			OpenclaWP_Smoke::check(
+				'KB top result cites the fixture by permalink',
+				is_string( $top['permalink'] ) && '' !== $top['permalink']
+			);
+			OpenclaWP_Smoke::check(
+				'KB top result excerpt mentions the query term',
+				false !== stripos( (string) $top['excerpt'], 'pineapple' )
+			);
+		}
+
+		wp_delete_post( (int) $fixture_id, true );
+		OpenclaWP_Knowledge_Base_Indexer::delete_post_chunks( (int) $fixture_id );
+	}
+}
+
 $failed = OpenclaWP_Smoke::summarize();
 if ( $failed > 0 ) {
 	exit( 1 );

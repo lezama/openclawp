@@ -51,4 +51,10 @@ if ( ! function_exists( 'as_schedule_recurring_action' ) ) {
 
 require_once OPENCLAWP_PATH . 'includes/autoload.php';
 
+// Activation: install the knowledge-base table. Other CPT-backed stores
+// rely on WordPress's built-in post tables and don't need this; the KB
+// uses a bespoke `wp_openclawp_kb` table with a FULLTEXT index for
+// MATCH ... AGAINST search.
+register_activation_hook( __FILE__, array( 'OpenclaWP_Knowledge_Base_Schema', 'install' ) );
+
 add_action( 'plugins_loaded', array( 'OpenclaWP_Bootstrap', 'init' ), 20 );
