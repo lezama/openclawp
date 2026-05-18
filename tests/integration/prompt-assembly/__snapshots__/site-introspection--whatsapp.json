@@ -1,0 +1,69 @@
+{
+	"agent_slug": "openclawp-site-introspection",
+	"channel": "whatsapp",
+	"delegate_targets": [],
+	"max_turns": 6,
+	"messages": [
+		{
+			"content": "How many comments are awaiting moderation?",
+			"role": "user"
+		}
+	],
+	"model_preference": {
+		"model": "claude-haiku-4-5"
+	},
+	"runtime_context": {
+		"client_context": {
+			"client_name": "whatsapp",
+			"connector_id": "whatsapp",
+			"external_conversation_id": "<PHONE>",
+			"external_message_id": "<MSG_ID>",
+			"external_provider": "whatsapp",
+			"room_kind": "dm",
+			"sender_id": "<PHONE>",
+			"source": "channel"
+		}
+	},
+	"system_instruction": "You are a helpful assistant that answers questions about this WordPress site. You have read-only access to four tools: openclawp__get-recent-posts (recent published posts), openclawp__count-comments (comment moderation totals), openclawp__get-active-plugins (currently active plugins), and openclawp__get-current-user (the human you are talking to). Always call the relevant tool before answering a factual question — never guess. Quote tool output values directly. Be concise.",
+	"tool_catalog": [
+		{
+			"description": "Returns up to 5 most recent published posts (title + permalink + excerpt).",
+			"name": "openclawp__get-recent-posts",
+			"parameters": {
+				"properties": {
+					"limit": {
+						"maximum": 10,
+						"minimum": 1,
+						"type": "integer"
+					}
+				},
+				"type": "object"
+			},
+			"source": "openclawp"
+		},
+		{
+			"description": "Returns counts of comments by status (approved, pending, spam, trash).",
+			"name": "openclawp__count-comments",
+			"parameters": {
+				"type": "object"
+			},
+			"source": "openclawp"
+		},
+		{
+			"description": "Lists currently active plugins on this site (name + version).",
+			"name": "openclawp__get-active-plugins",
+			"parameters": {
+				"type": "object"
+			},
+			"source": "openclawp"
+		},
+		{
+			"description": "Returns the logged-in WordPress user (id, login, display name, roles).",
+			"name": "openclawp__get-current-user",
+			"parameters": {
+				"type": "object"
+			},
+			"source": "openclawp"
+		}
+	]
+}

@@ -82,6 +82,14 @@ jobs:
       - name: Run PHPUnit (unit suite)
         run: vendor/bin/phpunit --testsuite unit
 
+      - name: Run prompt-assembly snapshot suite
+        # Fails the build if the assembled provider payload (system prompt,
+        # tool catalog, model preference, runtime context) drifts from the
+        # committed snapshot for any canonical (agent, channel) pair.
+        # Update flow: `UPDATE_SNAPSHOTS=1 composer test:assembly` — the
+        # regenerated snapshot then goes through PR review.
+        run: composer test:assembly
+
       - name: Run PHPUnit (integration suite)
         if: hashFiles('tests/integration/**') != ''
         run: vendor/bin/phpunit --testsuite integration
