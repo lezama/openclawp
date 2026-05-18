@@ -51,6 +51,16 @@ if ( ! function_exists( '__' ) ) {
 		return $text;
 	}
 }
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $value, int $options = 0, int $depth = 512 ) {
+		return json_encode( $value, $options, $depth );
+	}
+}
+if ( ! function_exists( 'get_option' ) ) {
+	function get_option( string $name, $default = false ) {
+		return $GLOBALS['openclawp_test_options'][ $name ] ?? $default;
+	}
+}
 if ( ! function_exists( 'is_wp_error' ) ) {
 	function is_wp_error( $thing ): bool {
 		return $thing instanceof \WP_Error;
@@ -72,6 +82,19 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		public function get_error_message(): string {
 			return $this->message;
 		}
+	}
+}
+if ( ! function_exists( 'wp_remote_post' ) ) {
+	function wp_remote_post( string $url, array $args = array() ) {
+		// Capture for assertion; return a synthetic OTLP-collector response.
+		$GLOBALS['openclawp_test_http_capture'][] = array(
+			'url'  => $url,
+			'args' => $args,
+		);
+		return array(
+			'response' => array( 'code' => 202, 'message' => 'Accepted' ),
+			'body'     => '',
+		);
 	}
 }
 
