@@ -47,7 +47,7 @@ final class OpenclaWP_Admin {
 		<div class="wrap openclawp-wrap">
 			<h1><?php esc_html_e( 'openclaWP — Chat', 'openclawp' ); ?></h1>
 			<p class="description">
-				<?php esc_html_e( 'Talk to a registered agent. Sessions persist as openclawp_session posts.', 'openclawp' ); ?>
+				<?php esc_html_e( 'Talk to a registered agent. Your conversation history is saved automatically.', 'openclawp' ); ?>
 			</p>
 			<?php echo do_blocks( '<!-- wp:openclawp/chat /-->' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- do_blocks output is safe. ?>
 		</div>
