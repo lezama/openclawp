@@ -102,6 +102,21 @@ final class OpenclaWP_Bootstrap {
 		if ( apply_filters( 'openclawp_register_telegram', false ) ) {
 			OpenclaWP_Telegram::register();
 		}
+
+		/**
+		 * Whether to register the generic external WhatsApp gateway adapter
+		 * (REST webhook + outbound POST + settings page + Channels card).
+		 *
+		 * Off by default. Opt in with
+		 * `add_filter( 'openclawp_register_external_whatsapp_gateway', '__return_true' )`
+		 * and configure shared secret + outbound URL at
+		 * openclaWP → External WhatsApp.
+		 *
+		 * @param bool $enabled Default false.
+		 */
+		if ( apply_filters( 'openclawp_register_external_whatsapp_gateway', false ) ) {
+			OpenclaWP_External_Whatsapp::register();
+		}
 	}
 
 	public static function register_blocks(): void {
