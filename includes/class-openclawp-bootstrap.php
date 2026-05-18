@@ -29,10 +29,12 @@ final class OpenclaWP_Bootstrap {
 		add_action( 'init', array( 'OpenclaWP_Conversation_Store', 'register_post_type' ), 5 );
 		add_action( 'init', array( 'OpenclaWP_Usage_Recorder', 'register_post_type' ), 5 );
 		add_action( 'init', array( 'OpenclaWP_Mcp_Server_Store', 'register_post_type' ), 5 );
+		add_action( 'init', array( 'OpenclaWP_Mcp_Client_Store', 'register_post_type' ), 5 );
 		add_action( 'init', array( __CLASS__, 'register_blocks' ), 10 );
 		OpenclaWP_Agent_Registrar::register();
 		OpenclaWP_Routine_Registrar::register();
 		OpenclaWP_Abilities::register();
+		OpenclaWP_Mcp_Client_Bridge::register();
 		OpenclaWP_Event_Sink::register();
 		OpenclaWP_Tracer::register();
 		OpenclaWP_Usage_Recorder::register();
@@ -48,6 +50,7 @@ final class OpenclaWP_Bootstrap {
 			OpenclaWP_Routines_Admin::register();
 			OpenclaWP_Usage_Admin::register();
 			OpenclaWP_Mcp_Admin::register();
+			OpenclaWP_Mcp_Clients_Admin::register();
 		}
 
 		/**
