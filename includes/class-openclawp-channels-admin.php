@@ -160,7 +160,37 @@ final class OpenclaWP_Channels_Admin {
 
 			<?php if ( empty( $channels ) ) : ?>
 				<div class="notice notice-info inline">
-					<p><?php esc_html_e( 'No channels registered. Activate a transport plugin to add one.', 'openclawp' ); ?></p>
+					<p><?php esc_html_e( 'No channels are connected yet. openclaWP supports several messaging surfaces — pick one to get started:', 'openclawp' ); ?></p>
+					<ul class="openclawp-channels-empty">
+						<li>
+							<strong><?php esc_html_e( 'WhatsApp (Cloud API)', 'openclawp' ); ?></strong>
+							— <?php
+								printf(
+									/* translators: %s: link to the bundled WhatsApp admin page */
+									esc_html__( 'Meta\'s official Graph API. Configure under %s.', 'openclawp' ),
+									'<a href="' . esc_url( admin_url( 'admin.php?page=openclawp-whatsapp' ) ) . '">' . esc_html__( 'openclaWP → WhatsApp', 'openclawp' ) . '</a>'
+								);
+							?>
+						</li>
+						<li>
+							<strong><?php esc_html_e( 'Telegram', 'openclawp' ); ?></strong>
+							— <?php esc_html_e( 'Bot API ingress. Bundled in recent releases — check the Channels list once connected.', 'openclawp' ); ?>
+						</li>
+						<li>
+							<strong><?php esc_html_e( 'External WhatsApp gateway', 'openclawp' ); ?></strong>
+							— <?php esc_html_e( 'Generic webhook adapter for any WhatsApp gateway you self-host.', 'openclawp' ); ?>
+						</li>
+						<li>
+							<strong><?php esc_html_e( 'Custom channel', 'openclawp' ); ?></strong>
+							— <?php
+								printf(
+									/* translators: %s: link to project docs on building a channel */
+									esc_html__( 'Build your own on the agents-api channel base class. See %s.', 'openclawp' ),
+									'<a href="https://github.com/lezama/openclawp#how-openclawp-compares" target="_blank" rel="noopener noreferrer">' . esc_html__( 'project README', 'openclawp' ) . '</a>'
+								);
+							?>
+						</li>
+					</ul>
 				</div>
 			<?php else : ?>
 				<div class="openclawp-channels-grid">
