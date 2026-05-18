@@ -955,6 +955,171 @@ if ( class_exists( 'OpenclaWP_Oauth_Store' ) && class_exists( 'OpenclaWP_Mcp_Ser
 	);
 }
 
+// Telegram adapter unit-style checks (don't depend on a configured bot).
+if ( class_exists( 'OpenclaWP_Telegram' ) ) {
+	OpenclaWP_Smoke::check(
+		'telegram verify_secret accepts a matching token',
+		OpenclaWP_Telegram::verify_secret( 'shared-secret', 'shared-secret' )
+	);
+
+	OpenclaWP_Smoke::check(
+		'telegram verify_secret rejects a mismatch',
+		false === OpenclaWP_Telegram::verify_secret( 'wrong', 'shared-secret' )
+	);
+
+	OpenclaWP_Smoke::check(
+		'telegram verify_secret fails closed when expected is empty',
+		false === OpenclaWP_Telegram::verify_secret( 'anything', '' )
+	);
+
+	OpenclaWP_Smoke::check(
+		'telegram allowlist rejects when list is empty',
+		false === OpenclaWP_Telegram::is_allowed( 12345, '' )
+	);
+
+	OpenclaWP_Smoke::check(
+		'telegram allowlist matches exact chat in CSV',
+		OpenclaWP_Telegram::is_allowed( 12345, '1, 12345, 7' )
+	);
+
+	$tg_payload = array(
+		'update_id' => 1,
+		'message'   => array(
+			'message_id' => 42,
+			'from'       => array( 'id' => 5001 ),
+			'chat'       => array( 'id' => 5001, 'type' => 'private' ),
+			'text'       => 'hola',
+		),
+	);
+	$tg_message = OpenclaWP_Telegram::extract_message( $tg_payload );
+	OpenclaWP_Smoke::check( 'telegram extract_message picks up text', is_array( $tg_message ) && 'hola' === $tg_message['text'] );
+	OpenclaWP_Smoke::check( 'telegram extract_message records chat id', is_array( $tg_message ) && 5001 === $tg_message['chat_id'] );
+
+	$tg_unsupported = OpenclaWP_Telegram::extract_message(
+		array(
+			'message' => array(
+				'message_id' => 1,
+				'chat'       => array( 'id' => 1 ),
+				'photo'      => array( array( 'file_id' => 'abc' ) ),
+			),
+		)
+	);
+	OpenclaWP_Smoke::check( 'telegram extract_message returns null for non-text updates', null === $tg_unsupported );
+
+	// Webhook handler integration covering the three contract scenarios:
+	// HMAC mismatch → 401, allowlisted chat → 200 + processed, unauthorized
+	// chat → 200 + dropped. Saves a throwaway settings option for the
+	// duration of these checks then restores the prior value.
+	OpenclaWP_Smoke::register_agent(
+		'openclawp-smoke-telegram',
+		array(
+			'label'          => 'Telegram smoke agent',
+			'description'    => 'Echoes the inbound text via the pre-chat-turn filter.',
+			'default_config' => array( 'provider' => 'auto', 'model' => 'auto' ),
+		)
+	);
+
+	$tg_echo_filter = static function ( $preflight, array $turn ) {
+		if ( 'openclawp-smoke-telegram' !== ( $turn['agent_slug'] ?? '' ) ) {
+			return $preflight;
+		}
+		return array(
+			'reply'     => 'echo:' . ( $turn['message'] ?? '' ),
+			'completed' => true,
+		);
+	};
+	add_filter( 'openclawp_pre_chat_turn', $tg_echo_filter, 10, 2 );
+
+	// Pre-block outbound POST so the test never tries to talk to api.telegram.org.
+	$tg_http_filter = static function ( $preempt, $args, $url ) {
+		if ( false !== strpos( (string) $url, 'api.telegram.org' ) ) {
+			return array(
+				'response' => array( 'code' => 200, 'message' => 'OK' ),
+				'body'     => '{"ok":true,"result":{}}',
+				'headers'  => array(),
+			);
+		}
+		return $preempt;
+	};
+	add_filter( 'pre_http_request', $tg_http_filter, 10, 3 );
+
+	$prior_settings = get_option( OpenclaWP_Telegram::OPTION_NAME, array() );
+	update_option(
+		OpenclaWP_Telegram::OPTION_NAME,
+		array(
+			'bot_token'     => '123456:smoke',
+			'secret_token'  => 'smoke-secret',
+			'allowlist'     => '5001',
+			'default_agent' => 'openclawp-smoke-telegram',
+			'user_id'       => 1,
+		),
+		false
+	);
+
+	$build_request = static function ( string $secret_header, string $body ): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/openclawp/v1/telegram/webhook' );
+		$request->set_header( 'content-type', 'application/json' );
+		if ( '' !== $secret_header ) {
+			$request->set_header( 'x_telegram_bot_api_secret_token', $secret_header );
+		}
+		$request->set_body( $body );
+		return $request;
+	};
+
+	$valid_payload = wp_json_encode(
+		array(
+			'update_id' => 1,
+			'message'   => array(
+				'message_id' => 100,
+				'from'       => array( 'id' => 5001 ),
+				'chat'       => array( 'id' => 5001, 'type' => 'private' ),
+				'text'       => 'hola',
+			),
+		)
+	);
+	$unauth_payload = wp_json_encode(
+		array(
+			'update_id' => 2,
+			'message'   => array(
+				'message_id' => 101,
+				'from'       => array( 'id' => 9999 ),
+				'chat'       => array( 'id' => 9999, 'type' => 'private' ),
+				'text'       => 'who-dis',
+			),
+		)
+	);
+
+	$bad_secret_response = OpenclaWP_Telegram::handle_inbound( $build_request( 'wrong-secret', $valid_payload ) );
+	OpenclaWP_Smoke::check(
+		'telegram webhook returns 401 on HMAC mismatch',
+		$bad_secret_response instanceof WP_Error
+			&& 401 === (int) ( $bad_secret_response->get_error_data()['status'] ?? 0 )
+	);
+
+	$ok_response = OpenclaWP_Telegram::handle_inbound( $build_request( 'smoke-secret', $valid_payload ) );
+	$ok_data     = $ok_response instanceof WP_REST_Response ? $ok_response->get_data() : array();
+	OpenclaWP_Smoke::check(
+		'telegram webhook 200 + processed=1 for allowlisted chat',
+		$ok_response instanceof WP_REST_Response
+			&& 200 === $ok_response->get_status()
+			&& 1 === (int) ( $ok_data['processed'] ?? 0 )
+	);
+
+	$dropped_response = OpenclaWP_Telegram::handle_inbound( $build_request( 'smoke-secret', $unauth_payload ) );
+	$dropped_data     = $dropped_response instanceof WP_REST_Response ? $dropped_response->get_data() : array();
+	OpenclaWP_Smoke::check(
+		'telegram webhook 200 + dropped=true for unauthorized chat',
+		$dropped_response instanceof WP_REST_Response
+			&& 200 === $dropped_response->get_status()
+			&& true === ( $dropped_data['dropped'] ?? false )
+			&& 0 === (int) ( $dropped_data['processed'] ?? 0 )
+	);
+
+	remove_filter( 'pre_http_request', $tg_http_filter, 10 );
+	remove_filter( 'openclawp_pre_chat_turn', $tg_echo_filter, 10 );
+	update_option( OpenclaWP_Telegram::OPTION_NAME, $prior_settings, false );
+}
+
 $failed = OpenclaWP_Smoke::summarize();
 if ( $failed > 0 ) {
 	exit( 1 );
