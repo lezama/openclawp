@@ -23,6 +23,12 @@ final class OpenclaWP_Mcp_Rest {
 	public const ROUTE     = 'mcp/(?P<server>[A-Za-z0-9-]+)';
 	public const PROTOCOL  = '2025-06-18';
 
+	/**
+	 * RFC 8594 Sunset date — the planned removal of this legacy endpoint.
+	 * Bump in lockstep with the deprecation window described in docs/mcp.md.
+	 */
+	public const SUNSET = 'Wed, 01 Jul 2026 00:00:00 GMT';
+
 	public static function register(): void {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 	}
@@ -68,18 +74,24 @@ final class OpenclaWP_Mcp_Rest {
 	 * Dispatch one JSON-RPC envelope.
 	 */
 	public static function handle( \WP_REST_Request $request ) {
+		self::log_deprecation_once( $request );
+
 		$server = OpenclaWP_Mcp_Server_Store::find_by_slug( (string) $request->get_param( 'server' ) );
 		if ( null === $server || ! OpenclaWP_Mcp_Server_Store::is_enabled( $server ) ) {
-			return new \WP_REST_Response(
-				self::jsonrpc_error( null, -32004, 'server not found or disabled' ),
-				404
+			return self::with_deprecation_headers(
+				new \WP_REST_Response(
+					self::jsonrpc_error( null, -32004, 'server not found or disabled' ),
+					404
+				)
 			);
 		}
 
 		$body = $request->get_body();
 		$rpc  = json_decode( (string) $body, true );
 		if ( ! is_array( $rpc ) || ! isset( $rpc['jsonrpc'] ) || '2.0' !== $rpc['jsonrpc'] ) {
-			return new \WP_REST_Response( self::jsonrpc_error( null, -32700, 'parse error' ), 400 );
+			return self::with_deprecation_headers(
+				new \WP_REST_Response( self::jsonrpc_error( null, -32700, 'parse error' ), 400 )
+			);
 		}
 
 		$id     = $rpc['id'] ?? null;
@@ -89,7 +101,50 @@ final class OpenclaWP_Mcp_Rest {
 		// Notifications (no id) get accepted with 202 + empty body.
 		$is_notification = ! array_key_exists( 'id', $rpc );
 
-		return self::dispatch( $server, $id, $method, $params, $is_notification );
+		return self::with_deprecation_headers(
+			self::dispatch( $server, $id, $method, $params, $is_notification )
+		);
+	}
+
+	/**
+	 * Stamp an outgoing response with the RFC 8594 `Sunset` + `Deprecation`
+	 * headers and a `Link: rel="successor-version"` pointer to the official
+	 * mcp-adapter route. Helps external clients flag the migration without
+	 * needing to read release notes.
+	 */
+	private static function with_deprecation_headers( \WP_REST_Response $response ): \WP_REST_Response {
+		$response->header( 'Sunset', self::SUNSET );
+		$response->header( 'Deprecation', 'true' );
+		$response->header(
+			'Link',
+			'<' . esc_url_raw( rest_url( self::NAMESPACE . '/mcp-adapter/' ) ) . '>; rel="successor-version"'
+		);
+		return $response;
+	}
+
+	/**
+	 * Log a deprecation notice for the running PHP error log. Once per
+	 * request — repeated tools/list polls from a long-lived MCP client
+	 * shouldn't flood the log every minute.
+	 */
+	private static function log_deprecation_once( \WP_REST_Request $request ): void {
+		static $logged = false;
+		if ( $logged ) {
+			return;
+		}
+		$logged = true;
+
+		if ( function_exists( '_doing_it_wrong' ) ) {
+			_doing_it_wrong(
+				'OpenclaWP_Mcp_Rest::handle',
+				sprintf(
+					/* translators: %s: legacy MCP slug. */
+					esc_html__( 'openclaWP legacy MCP JSON-RPC endpoint (%s) is deprecated. Migrate to the official mcp-adapter route under /openclawp/v1/mcp-adapter/{slug}.', 'openclawp' ),
+					esc_html( (string) $request->get_param( 'server' ) )
+				),
+				'0.2.0'
+			);
+		}
 	}
 
 	private static function dispatch( \WP_Post $server, $id, string $method, array $params, bool $is_notification ): \WP_REST_Response {
