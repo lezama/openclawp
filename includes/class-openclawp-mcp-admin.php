@@ -94,7 +94,7 @@ final class OpenclaWP_Mcp_Admin {
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html__( 'openclaWP — MCP Servers', 'openclawp' ) . '</h1>';
 		echo '<p class="description">' . esc_html(
-			__( 'Each MCP server exposes one registered agent\'s tool surface through the official WordPress mcp-adapter at /openclawp/v1/mcp-adapter/{slug}, so Claude Code / Cursor / VS Code can call it. Bearer tokens are shown once at creation — copy them then.', 'openclawp' )
+			__( 'Let external AI clients like Claude Code, Cursor, or VS Code call one of your agent\'s tools. Each MCP server gets its own URL and a bearer token shown once on creation — copy it then.', 'openclawp' )
 		) . '</p>';
 
 		if ( OpenclaWP_Bootstrap::legacy_mcp_enabled() ) {

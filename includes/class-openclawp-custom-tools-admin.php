@@ -267,7 +267,7 @@ final class OpenclaWP_Custom_Tools_Admin {
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html__( 'openclaWP — Custom Tools', 'openclawp' ) . '</h1>';
 		echo '<p class="description">' . esc_html__(
-			'Define new agent tools from wp-admin — no PHP. Each saved tool is registered as a WordPress ability at runtime, so the agent can call it on the next turn. v1 supports HTTP request tools; WordPress hook and WP-CLI tools are coming.',
+			'Give your agent new capabilities without writing PHP. Each tool you save here becomes callable by the agent on its next turn. Today\'s version supports HTTP-request tools; WordPress hook and WP-CLI tools are coming.',
 			'openclawp'
 		) . '</p>';
 

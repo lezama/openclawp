@@ -105,12 +105,11 @@ final class OpenclaWP_Workflow_Admin {
 				<?php
 				echo wp_kses(
 					__(
-						'A <strong>workflow</strong> is a deterministic recipe that strings agents and abilities together — for example, "every time a comment lands, classify it for spam, and email me if it is." Each step is either an <strong>ability</strong> (a deterministic operation: read posts, send mail, hit an API) or an <strong>agent</strong> (an LLM call that reasons about something). Step outputs feed into later steps via <code>${steps.&lt;id&gt;.output.&lt;path&gt;}</code> bindings, and the whole thing is triggered by a WordPress hook, a cron tick, or an explicit run-now request.',
+						'A <strong>workflow</strong> is a reusable recipe — for example, "every time a comment lands, check if it is spam and email me if it is." A workflow runs on a trigger (a WordPress event, a schedule, or on demand) and chains together steps. Each step either runs a deterministic action (read posts, send mail, hit an API) or asks an AI agent to reason about something.',
 						'openclawp'
 					),
 					array(
 						'strong' => array(),
-						'code'   => array(),
 					)
 				);
 				?>
@@ -119,12 +118,11 @@ final class OpenclaWP_Workflow_Admin {
 				<?php
 				echo wp_kses(
 					__(
-						'Workflows registered by plugins live in memory; workflows you create here are persisted as <code>openclawp_workflow</code> posts and survive restarts. Click <strong>Create with AI</strong> to describe a workflow in English and let the drafter agent translate it into a valid spec.',
+						'Click <strong>Create with AI</strong> to describe a workflow in plain English — an AI agent will translate it into a runnable spec for you.',
 						'openclawp'
 					),
 					array(
 						'strong' => array(),
-						'code'   => array(),
 					)
 				);
 				?>
