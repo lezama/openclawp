@@ -147,13 +147,22 @@ final class OpenclaWP_Runner {
 			'content' => $message,
 		);
 
-		$tools         = OpenclaWP_Tools_Resolver::for_agent( $agent );
+		$tools = OpenclaWP_Tools_Resolver::for_agent( $agent );
+		// Stamp identity onto the runtime context so the executor can
+		// resolve user/session/agent without an extra round-trip back into
+		// the runner. Used by the confirmation gate (#40) to look up
+		// per-user "always allow" entries and create decision rows.
+		$executor_context = $runtime_context;
+		$executor_context['user_id']    = $user_id;
+		$executor_context['session_id'] = $session_id;
+		$executor_context['agent_slug'] = $agent_slug;
+
 		$has_tools     = ! empty( $tools['name_to_ability'] ) || ! empty( $tools['delegate_targets'] );
 		$tool_executor = $has_tools
 			? new OpenclaWP_Tool_Executor(
 				$tools['name_to_ability'],
 				$tools['delegate_targets'] ?? array(),
-				$runtime_context
+				$executor_context
 			)
 			: null;
 		$max_turns     = (int) ( ( $agent->get_default_config()['max_turns'] ?? 5 ) );

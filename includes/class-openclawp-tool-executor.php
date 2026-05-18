@@ -76,7 +76,22 @@ final class OpenclaWP_Tool_Executor implements WP_Agent_Tool_Executor {
 		}
 
 		$parameters = (array) apply_filters( 'openclawp_tool_parameters', $parameters, $ability_name, $tool_call, $context, $this->runtime_context );
-		$result     = $ability->execute( $parameters );
+
+		// Confirmation gate. When the ability's effect crosses the active
+		// threshold AND the user hasn't pre-authorised it via "Always allow",
+		// we DON'T execute. Instead we emit a structured "awaiting decision"
+		// tool result that the agent loop sees as a recoverable failure, and
+		// the UI surfaces as a confirmation card. The loop can resume on a
+		// follow-up turn (after the user clicks Allow/Deny) by re-running
+		// the same tool call — the second pass either finds the always-allow
+		// flag set, or carries an `openclawp_decision_override` runtime hint
+		// that the gate honours.
+		$gate = $this->maybe_gate( $ability_name, $declared_name, $parameters );
+		if ( null !== $gate ) {
+			return $gate;
+		}
+
+		$result = $ability->execute( $parameters );
 		if ( is_wp_error( $result ) ) {
 			return array(
 				'success'   => false,
@@ -89,6 +104,102 @@ final class OpenclaWP_Tool_Executor implements WP_Agent_Tool_Executor {
 			'success'   => true,
 			'tool_name' => $declared_name,
 			'result'    => $result,
+		);
+	}
+
+	/**
+	 * Decide whether this tool call needs human confirmation. Returns either
+	 * `null` (proceed with execution) or a synthetic tool-result that should
+	 * stand in for the actual call.
+	 *
+	 * The synthetic result carries `awaiting_decision: { decision_id, ability,
+	 * effect, parameters }` so the chat UI / SSE subscribers / async channels
+	 * can render a confirmation card without parsing prose. It deliberately
+	 * does NOT block the PHP request — the loop sees a tool failure and can
+	 * either reason about it ("I tried to delete the post but need your OK")
+	 * or short-circuit on the next turn after the user resolves it.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private function maybe_gate( string $ability_name, string $declared_name, array $parameters ): ?array {
+		if ( ! class_exists( 'OpenclaWP_Tool_Effects' ) ) {
+			return null;
+		}
+
+		$effect    = OpenclaWP_Tool_Effects::for_ability( $ability_name );
+		$threshold = OpenclaWP_Tool_Effects::active_threshold( $this->runtime_context );
+
+		if ( ! OpenclaWP_Tool_Effects::requires_confirmation( $effect, $threshold ) ) {
+			return null;
+		}
+
+		$user_id = isset( $this->runtime_context['user_id'] )
+			? (int) $this->runtime_context['user_id']
+			: ( function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0 );
+
+		// `always allow` short-circuits the gate.
+		if ( OpenclaWP_Tool_Effects::user_allows_always( $user_id, $ability_name ) ) {
+			return null;
+		}
+
+		// One-shot override carried by the runtime context — set when the
+		// follow-up turn after a user decision wants to let THIS particular
+		// invocation through (matched by ability + decision_id).
+		$override = $this->runtime_context['openclawp_decision_override'] ?? null;
+		if ( is_array( $override ) && ( $override['ability'] ?? '' ) === $ability_name ) {
+			return null;
+		}
+
+		$session_id = (string) ( $this->runtime_context['session_id'] ?? '' );
+		$agent_slug = (string) ( $this->runtime_context['agent_slug'] ?? '' );
+
+		$record = class_exists( 'OpenclaWP_Decisions_Store' )
+			? OpenclaWP_Decisions_Store::create_pending(
+				array(
+					'session_id' => $session_id,
+					'user_id'    => $user_id,
+					'agent_slug' => $agent_slug,
+					'ability'    => $ability_name,
+					'effect'     => $effect,
+					'threshold'  => $threshold,
+					'parameters' => $parameters,
+				)
+			)
+			: null;
+
+		$decision_id = $record['decision_id'] ?? '';
+
+		$awaiting = array(
+			'decision_id' => $decision_id,
+			'ability'     => $ability_name,
+			'effect'      => $effect,
+			'threshold'   => $threshold,
+			'parameters'  => $parameters,
+			'session_id'  => $session_id,
+			'agent_slug'  => $agent_slug,
+		);
+
+		/**
+		 * Fires when a tool call is gated for user confirmation.
+		 *
+		 * Subscribers can use this to push a card to a chat UI or to send a
+		 * numbered-reply message on an async channel (WhatsApp / Telegram).
+		 *
+		 * @since 0.8.0
+		 *
+		 * @param array $awaiting Decision payload (see shape above).
+		 */
+		do_action( 'openclawp_tool_call_gated', $awaiting );
+
+		return array(
+			'success'           => false,
+			'tool_name'         => $declared_name,
+			'error'             => sprintf(
+				'awaiting_user_decision: tool "%s" (effect=%s) requires confirmation. The user has been prompted; the call did not run.',
+				$ability_name,
+				$effect
+			),
+			'awaiting_decision' => $awaiting,
 		);
 	}
 
