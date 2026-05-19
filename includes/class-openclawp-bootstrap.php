@@ -75,6 +75,7 @@ final class OpenclaWP_Bootstrap {
 			OpenclaWP_Custom_Tools_Admin::register();
 			OpenclaWP_Knowledge_Base_Admin::register();
 			OpenclaWP_Oauth_Admin::register();
+			OpenclaWP_Admin_Bar_Panel::register();
 		}
 
 		/**

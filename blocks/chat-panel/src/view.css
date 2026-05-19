@@ -1,0 +1,61 @@
+/*
+ * Chrome for the openclaWP floating admin-bar chat panel.
+ *
+ * Keeps to the panel shell only — the conversation surface inside uses
+ * `@automattic/agenttic-ui` styles unchanged. The confirmation card inside
+ * the surface ships its own CSS from the chat block bundle.
+ */
+
+.openclawp-panel {
+	position: fixed;
+	top: 32px;
+	right: 0;
+	bottom: 0;
+	width: 100%;
+	max-width: 480px;
+	background: #fff;
+	box-shadow: -2px 0 12px rgba( 0, 0, 0, 0.08 );
+	transform: translateX( 100% );
+	transition: transform 200ms ease;
+	display: flex;
+	flex-direction: column;
+	z-index: 99998;
+}
+
+.openclawp-panel.is-open {
+	transform: translateX( 0 );
+}
+
+@media screen and ( max-width: 782px ) {
+	.openclawp-panel {
+		top: 46px;
+		max-width: 100%;
+	}
+}
+
+.openclawp-panel__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 12px;
+	border-bottom: 1px solid #dcdcde;
+	flex: 0 0 auto;
+}
+
+.openclawp-panel__title {
+	margin: 0;
+	font-size: 14px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.openclawp-panel__body {
+	flex: 1 1 auto;
+	overflow: auto;
+	padding: 12px;
+}
+
+.openclawp-panel__empty {
+	color: #50575e;
+	font-size: 13px;
+}
