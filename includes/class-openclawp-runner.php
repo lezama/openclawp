@@ -298,6 +298,30 @@ final class OpenclaWP_Runner {
 				// WP_AI_Client_Prompt_Builder forwards these via __call, so
 				// method_exists() returns false for them — call directly.
 				$description = $agent_obj->get_description();
+
+				// Append admin-authored Agent files (CPT shipped in PR #71).
+				// When the CPT is empty for this agent, this is a no-op.
+				if ( class_exists( 'OpenclaWP_Agent_Files_Store' ) ) {
+					$agent_files_text = OpenclaWP_Agent_Files_Store::for_agent_as_text( $agent_obj->get_slug() );
+					if ( '' !== $agent_files_text ) {
+						$description = ( '' !== $description )
+							? $description . "\n\n" . $agent_files_text
+							: $agent_files_text;
+					}
+				}
+
+				/**
+				 * Filter the system instruction the runner passes to the AI
+				 * client for this turn. Receives the post-agent-files
+				 * description + the agent slug.
+				 *
+				 * @since 0.11.0
+				 *
+				 * @param string $description Fully assembled system instruction.
+				 * @param string $agent_slug  Agent that's about to run.
+				 */
+				$description = (string) apply_filters( 'openclawp_runner_system_instruction', $description, $agent_obj->get_slug() );
+
 				if ( '' !== $description ) {
 					$builder = $builder->using_system_instruction( $description );
 				}
