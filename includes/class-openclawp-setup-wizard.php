@@ -80,6 +80,10 @@ final class OpenclaWP_Setup_Wizard {
 	 * Dismissible welcome notice rendered on every admin screen until the
 	 * wizard is complete. Skipped on the wizard itself so it doesn't compete
 	 * with the wizard's own UI.
+	 *
+	 * The CTA points at the Chat page (`?page=openclawp`) so users land in
+	 * the in-chat card wizard by default. The PHP wizard at
+	 * `?page=openclawp-setup` remains reachable as a deep-link fallback.
 	 */
 	public static function maybe_render_welcome_notice(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -94,13 +98,13 @@ final class OpenclaWP_Setup_Wizard {
 			return;
 		}
 
-		$wizard_url = admin_url( 'admin.php?page=' . self::PAGE_SLUG );
+		$chat_url = admin_url( 'admin.php?page=' . OpenclaWP_Admin::PAGE_SLUG );
 		?>
 		<div class="notice notice-info is-dismissible openclawp-setup-notice">
 			<p>
 				<strong><?php esc_html_e( 'Welcome to openclaWP', 'openclawp' ); ?></strong> —
 				<?php esc_html_e( 'finish setup so you can talk to your first agent.', 'openclawp' ); ?>
-				<a class="button button-primary" style="margin-left:8px;" href="<?php echo esc_url( $wizard_url ); ?>">
+				<a class="button button-primary" style="margin-left:8px;" href="<?php echo esc_url( $chat_url ); ?>">
 					<?php esc_html_e( 'Start setup', 'openclawp' ); ?>
 				</a>
 			</p>
