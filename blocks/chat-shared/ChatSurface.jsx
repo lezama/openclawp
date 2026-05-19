@@ -22,6 +22,8 @@ import { SelectControl, Button, Notice } from '@wordpress/components';
 import { useAgentChat } from '@automattic/agenttic-client';
 import { AgentUI } from '@automattic/agenttic-ui';
 import '@automattic/agenttic-ui/index.css';
+import Card from './Card.jsx';
+import { COMMANDS, parseInput } from './commands/index.js';
 
 const SESSION_KEY = 'openclawp:active-session';
 
@@ -140,6 +142,11 @@ export default function ChatSurface( { agents, defaultAgent, bridgeUrl, nonce, r
 
 	const sessionIdStorageKey = useMemo( () => SESSION_KEY + ':' + agentId, [ agentId ] );
 
+	// Bump to force `useAgentChat` to remount with a fresh session — used by
+	// `/clear` and `/reset` so the next user message starts a new server-side
+	// conversation rather than continuing the previous one.
+	const [ resetNonce, setResetNonce ] = useState( 0 );
+
 	const {
 		messages,
 		isProcessing,
@@ -152,13 +159,111 @@ export default function ChatSurface( { agents, defaultAgent, bridgeUrl, nonce, r
 		agentId,
 		agentUrl: bridgeUrl,
 		sessionId: '',
-		sessionIdStorageKey,
+		// Include the reset nonce in the storage key so a `/clear` invocation
+		// causes the hook to read an empty value on the next render and start
+		// a fresh session.
+		sessionIdStorageKey: sessionIdStorageKey + ':' + resetNonce,
 		authProvider: nonce ? authProvider : undefined,
 		credentials: 'same-origin',
 	} );
 
 	const [ sessionId, refreshSession ] = useLatestSessionId( sessionIdStorageKey );
 	const [ pending, setPending ] = useState( null );
+	const [ cardStack, setCardStack ] = useState( [] );
+
+	const pushCard = useCallback( ( card ) => {
+		if ( ! card ) {
+			return;
+		}
+		// Stamp a stable key so React can keep dismiss buttons paired with
+		// their cards across re-renders.
+		const stamped = { ...card, __key: Date.now() + ':' + Math.random() };
+		setCardStack( ( stack ) => [ stamped, ...stack ] );
+	}, [] );
+
+	const dismissCard = useCallback( ( key ) => {
+		setCardStack( ( stack ) => stack.filter( ( c ) => c.__key !== key ) );
+	}, [] );
+
+	const clearLocalSession = useCallback( () => {
+		try {
+			window.localStorage.removeItem( sessionIdStorageKey );
+			// Also remove the current effective key — the hook reads from
+			// `sessionIdStorageKey + ':' + resetNonce`, and the prior session
+			// may have written under that exact key.
+			window.localStorage.removeItem( sessionIdStorageKey + ':' + resetNonce );
+		} catch ( e ) {
+			// localStorage may be disabled — bumping the reset nonce below is
+			// still enough to start the next message in a fresh session.
+		}
+		setResetNonce( ( n ) => n + 1 );
+		refreshSession();
+	}, [ sessionIdStorageKey, resetNonce, refreshSession ] );
+
+	const runCommand = useCallback(
+		async ( commandText ) => {
+			const parsed = parseInput( commandText );
+			if ( ! parsed ) {
+				return;
+			}
+			const ctx = {
+				agents,
+				agentId,
+				restNamespace,
+				nonce,
+				commands: COMMANDS,
+				clearLocalSession,
+			};
+			if ( parsed.command ) {
+				try {
+					const card = await parsed.command.handler( parsed.args, ctx );
+					pushCard( card );
+				} catch ( e ) {
+					pushCard( {
+						type: 'card',
+						kind: 'warning',
+						title: 'Command failed',
+						body: e && e.message ? e.message : 'Unknown error.',
+					} );
+				}
+				return;
+			}
+			// Unknown command — surface the same help payload as `/help`,
+			// flagged as a warning so it's visually distinct.
+			const helpLines = COMMANDS.map(
+				( cmd ) => `- **${ cmd.name }** — ${ cmd.description }`
+			);
+			pushCard( {
+				type: 'card',
+				kind: 'warning',
+				title: `Unknown command: ${ parsed.name }`,
+				body:
+					'Try one of the bundled commands:\n\n' + helpLines.join( '\n' ),
+			} );
+		},
+		[ agents, agentId, restNamespace, nonce, clearLocalSession, pushCard ]
+	);
+
+	const handleSubmit = useCallback(
+		async ( message, options ) => {
+			const parsed = parseInput( message );
+			if ( parsed ) {
+				await runCommand( message );
+				return;
+			}
+			return onSubmit( message, options );
+		},
+		[ onSubmit, runCommand ]
+	);
+
+	const handleCardAction = useCallback(
+		( action ) => {
+			if ( action && action.command ) {
+				runCommand( action.command );
+			}
+		},
+		[ runCommand ]
+	);
 
 	// Poll for pending tool-call decisions after the assistant finishes
 	// processing. One immediate check + a short follow-up; we deliberately
@@ -235,16 +340,29 @@ export default function ChatSurface( { agents, defaultAgent, bridgeUrl, nonce, r
 				/>
 			) }
 
+			{ cardStack.length > 0 && (
+				<div className="openclawp-card-stack">
+					{ cardStack.map( ( card ) => (
+						<Card
+							key={ card.__key }
+							card={ card }
+							onDismiss={ () => dismissCard( card.__key ) }
+							onAction={ handleCardAction }
+						/>
+					) ) }
+				</div>
+			) }
+
 			<AgentUI
 				variant="embedded"
 				messages={ messages }
 				isProcessing={ isProcessing }
 				error={ error }
-				onSubmit={ onSubmit }
+				onSubmit={ handleSubmit }
 				onStop={ abortCurrentRequest }
 				suggestions={ suggestions }
 				clearSuggestions={ clearSuggestions }
-				placeholder="Type a message…"
+				placeholder="Type a message or /help…"
 			/>
 		</section>
 	);

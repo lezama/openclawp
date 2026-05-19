@@ -1,0 +1,76 @@
+/**
+ * openclaWP chat cards.
+ *
+ * A card is a small, colored-border panel rendered above the agenttic-ui
+ * message stream. Slash-command responses live here so they're visually
+ * separate from LLM-generated messages. One class per `kind` controls the
+ * accent color; the rest is shared layout.
+ */
+
+.openclawp-card {
+	position: relative;
+	margin: 0 0 12px 0;
+	padding: 12px 36px 12px 14px;
+	border: 1px solid #dcdcde;
+	border-left-width: 4px;
+	border-radius: 4px;
+	background: #fff;
+	color: #1e1e1e;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.openclawp-card--info {
+	border-left-color: #2271b1;
+}
+
+.openclawp-card--success {
+	border-left-color: #00a32a;
+}
+
+.openclawp-card--warning {
+	border-left-color: #dba617;
+}
+
+.openclawp-card__title {
+	margin: 0 0 6px 0;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.openclawp-card__body {
+	margin: 0;
+	white-space: pre-wrap;
+}
+
+.openclawp-card__body p {
+	margin: 0 0 6px 0;
+}
+
+.openclawp-card__body p:last-child {
+	margin-bottom: 0;
+}
+
+.openclawp-card__body code {
+	padding: 1px 4px;
+	border-radius: 3px;
+	background: #f0f0f1;
+	font-size: 12px;
+}
+
+.openclawp-card__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 10px;
+}
+
+.openclawp-card__dismiss {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+}
+
+.openclawp-card-stack {
+	margin: 0 0 8px 0;
+}
