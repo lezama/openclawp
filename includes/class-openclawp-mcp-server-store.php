@@ -9,9 +9,11 @@
  * enabled/disabled (`publish` / `draft`) so we don't need an extra meta
  * lookup at request time.
  *
- * The plaintext bearer token is shown to the admin exactly once via a
- * flash transient — only its `wp_hash_password()` hash + last four chars
- * persist. Regenerate produces a new token + new hash and immediately
+ * The plaintext bearer token is recoverable for 15 minutes after create
+ * or regenerate via a per-user flash transient — only its
+ * `wp_hash_password()` hash + last four chars persist. Acknowledging the
+ * disclosure (or letting the transient expire) purges the plaintext;
+ * regenerate then produces a new token + new hash and immediately
  * invalidates the old one.
  *
  * @package OpenclaWP
@@ -27,6 +29,14 @@ final class OpenclaWP_Mcp_Server_Store {
 	public const META_ALLOWLIST  = '_openclawp_mcp_tool_allowlist';
 	public const META_TOKEN_HASH = '_openclawp_mcp_token_hash';
 	public const META_TOKEN_LAST4 = '_openclawp_mcp_token_last4';
+
+	/**
+	 * How long the post-create / post-regenerate plaintext token stays
+	 * recoverable to the admin who triggered it. Long enough to copy
+	 * into a config file even after an accidental refresh, short enough
+	 * not to be a meaningful security hole.
+	 */
+	public const TOKEN_FLASH_TTL = 15 * MINUTE_IN_SECONDS;
 
 	public static function register_post_type(): void {
 		register_post_type(
@@ -141,6 +151,18 @@ final class OpenclaWP_Mcp_Server_Store {
 		return $token;
 	}
 
+	/**
+	 * Slug-keyed wrapper around `rotate_token()`. Returns the new
+	 * plaintext token, or null when the slug does not resolve.
+	 */
+	public static function regenerate_token( string $slug ): ?string {
+		$post = self::find_by_slug( $slug );
+		if ( null === $post ) {
+			return null;
+		}
+		return self::rotate_token( $post->ID );
+	}
+
 	public static function toggle_enabled( int $post_id, bool $enabled ): bool {
 		$new_status = $enabled ? 'publish' : 'draft';
 		$result     = wp_update_post(
@@ -194,7 +216,10 @@ final class OpenclaWP_Mcp_Server_Store {
 
 	/**
 	 * Stash a plaintext token in a per-user flash transient so the admin
-	 * page can show it once after create / rotate. TTL = 60 s.
+	 * page can recover it after a create / regenerate. TTL is
+	 * `TOKEN_FLASH_TTL` so an accidental refresh isn't terminal — long
+	 * enough to copy into a config file, short enough that an
+	 * unattended browser tab isn't a meaningful exposure.
 	 */
 	public static function flash_token( int $post_id, string $token ): void {
 		$user_id = get_current_user_id();
@@ -204,22 +229,51 @@ final class OpenclaWP_Mcp_Server_Store {
 		set_transient(
 			self::flash_key( $user_id, $post_id ),
 			$token,
-			60
+			self::TOKEN_FLASH_TTL
 		);
 	}
 
-	public static function pop_flashed_token( int $post_id ): ?string {
+	/**
+	 * Non-destructive read. The token stays in the transient (until it
+	 * expires or the admin explicitly acknowledges) so refreshing the
+	 * disclosure page keeps showing it.
+	 */
+	public static function peek_flashed_token( int $post_id ): ?string {
 		$user_id = get_current_user_id();
 		if ( $user_id <= 0 ) {
 			return null;
 		}
-		$key   = self::flash_key( $user_id, $post_id );
-		$value = get_transient( $key );
+		$value = get_transient( self::flash_key( $user_id, $post_id ) );
 		if ( false === $value ) {
 			return null;
 		}
-		delete_transient( $key );
 		return (string) $value;
+	}
+
+	/**
+	 * Admin confirmed they've saved the token — purge the plaintext so
+	 * subsequent refreshes can no longer reveal it.
+	 */
+	public static function acknowledge_token( int $post_id ): void {
+		$user_id = get_current_user_id();
+		if ( $user_id <= 0 ) {
+			return;
+		}
+		delete_transient( self::flash_key( $user_id, $post_id ) );
+	}
+
+	/**
+	 * Legacy single-use accessor. Retained so older callers keep
+	 * working; new code should pair `peek_flashed_token()` with
+	 * `acknowledge_token()` so accidental refreshes aren't terminal.
+	 */
+	public static function pop_flashed_token( int $post_id ): ?string {
+		$value = self::peek_flashed_token( $post_id );
+		if ( null === $value ) {
+			return null;
+		}
+		self::acknowledge_token( $post_id );
+		return $value;
 	}
 
 	private static function flash_key( int $user_id, int $post_id ): string {
