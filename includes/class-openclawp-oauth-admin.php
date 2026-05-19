@@ -22,8 +22,15 @@ final class OpenclaWP_Oauth_Admin {
 	}
 
 	public static function register_submenu(): void {
+		// Hide-when-empty: only show in the sidebar once at least one OAuth
+		// client (manually created or DCR-self-registered) exists. The page
+		// itself remains reachable via its `?page=` URL.
+		$parent = OpenclaWP_Admin_Menu_Visibility::parent_for(
+			self::PAGE_SLUG,
+			! empty( OpenclaWP_Oauth_Store::all_clients() )
+		);
 		add_submenu_page(
-			OpenclaWP_Admin::PAGE_SLUG,
+			$parent,
 			__( 'Connected Clients', 'openclawp' ),
 			__( 'Connected Clients', 'openclawp' ),
 			'manage_options',

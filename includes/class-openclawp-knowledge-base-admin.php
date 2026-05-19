@@ -41,8 +41,13 @@ final class OpenclaWP_Knowledge_Base_Admin {
 	 * Add the submenu page under the openclaWP top-level menu.
 	 */
 	public static function register_submenu(): void {
+		// Hide-when-empty: surface the Knowledge Base entry once at least
+		// one post-type or URL source has been configured.
+		$config  = OpenclaWP_Knowledge_Base_Sources::get();
+		$has_kb  = ! empty( $config['post_types'] ) || ! empty( $config['urls'] );
+		$parent  = OpenclaWP_Admin_Menu_Visibility::parent_for( self::PAGE_SLUG, $has_kb );
 		add_submenu_page(
-			OpenclaWP_Admin::PAGE_SLUG,
+			$parent,
 			__( 'Knowledge Base', 'openclawp' ),
 			__( 'Knowledge Base', 'openclawp' ),
 			'manage_options',

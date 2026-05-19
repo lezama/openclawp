@@ -21,8 +21,13 @@ final class OpenclaWP_Decisions_Admin {
 	}
 
 	public static function register_submenu(): void {
+		// Hide-when-empty: only surface the Tool activity log once the
+		// agent has actually asked for at least one confirmation. Limit=1
+		// keeps the existence check cheap.
+		$has_decisions = ! empty( OpenclaWP_Decisions_Store::recent( array( 'limit' => 1 ) ) );
+		$parent        = OpenclaWP_Admin_Menu_Visibility::parent_for( self::PAGE_SLUG, $has_decisions );
 		add_submenu_page(
-			OpenclaWP_Admin::PAGE_SLUG,
+			$parent,
 			__( 'Tool activity', 'openclawp' ),
 			__( 'Tool activity', 'openclawp' ),
 			'manage_options',
