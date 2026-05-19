@@ -105,4 +105,37 @@ final class AdminMenuVisibilityTest extends TestCase {
 			$slugs
 		);
 	}
+
+	public function test_surface_count_returns_null_for_unknown_slug(): void {
+		$this->assertNull(
+			OpenclaWP_Admin_Menu_Visibility::surface_count( 'openclawp-unknown-surface' )
+		);
+	}
+
+	public function test_is_surface_populated_returns_true_for_unknown_slug(): void {
+		// Unknown surfaces (e.g. host-supplied) should not be suppressed by
+		// the visibility helper — we have no count to compare against.
+		$this->assertTrue(
+			OpenclaWP_Admin_Menu_Visibility::is_surface_populated( 'openclawp-unknown-surface' )
+		);
+	}
+
+	public function test_parent_for_slug_returns_parent_when_helper_reports_unknown(): void {
+		// Unknown slugs report `null` from `surface_count()` which the bool
+		// helper treats as populated, so the parent is the openclaWP menu.
+		$this->assertSame(
+			OpenclaWP_Admin::PAGE_SLUG,
+			OpenclaWP_Admin_Menu_Visibility::parent_for_slug( 'openclawp-unknown-surface' )
+		);
+	}
+
+	public function test_parent_for_slug_honours_always_visible(): void {
+		// Settings has no count callback, but it's in the always-visible
+		// set, so the helper must keep it attached even when treated as
+		// "not populated".
+		$this->assertSame(
+			OpenclaWP_Admin::PAGE_SLUG,
+			OpenclaWP_Admin_Menu_Visibility::parent_for_slug( 'openclawp-settings' )
+		);
+	}
 }

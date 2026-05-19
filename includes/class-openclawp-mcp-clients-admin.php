@@ -31,11 +31,9 @@ final class OpenclaWP_Mcp_Clients_Admin {
 	public static function register_submenu(): void {
 		// Hide-when-empty: surface the MCP Clients tab once at least one
 		// external MCP server has been configured. The one-click recipes
-		// can still be reached via the direct `?page=` URL.
-		$parent = OpenclaWP_Admin_Menu_Visibility::parent_for(
-			self::PAGE_SLUG,
-			! empty( OpenclaWP_Mcp_Client_Store::all() )
-		);
+		// can still be reached via the direct `?page=` URL. The check is
+		// centralised on the menu-visibility helper.
+		$parent = OpenclaWP_Admin_Menu_Visibility::parent_for_slug( self::PAGE_SLUG );
 		add_submenu_page(
 			$parent,
 			__( 'MCP Clients', 'openclawp' ),

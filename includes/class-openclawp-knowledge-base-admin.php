@@ -42,10 +42,9 @@ final class OpenclaWP_Knowledge_Base_Admin {
 	 */
 	public static function register_submenu(): void {
 		// Hide-when-empty: surface the Knowledge Base entry once at least
-		// one post-type or URL source has been configured.
-		$config  = OpenclaWP_Knowledge_Base_Sources::get();
-		$has_kb  = ! empty( $config['post_types'] ) || ! empty( $config['urls'] );
-		$parent  = OpenclaWP_Admin_Menu_Visibility::parent_for( self::PAGE_SLUG, $has_kb );
+		// one post-type or URL source has been configured. The check lives
+		// on the menu-visibility helper so the Discover panel agrees.
+		$parent = OpenclaWP_Admin_Menu_Visibility::parent_for_slug( self::PAGE_SLUG );
 		add_submenu_page(
 			$parent,
 			__( 'Knowledge Base', 'openclawp' ),

@@ -161,7 +161,39 @@ final class OpenclaWP_Settings_Admin {
 					</tbody>
 				</table>
 			<?php endif; ?>
+
+			<?php self::render_discover_restore(); ?>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Footer link on the Settings page that restores the Discover panel on
+	 * the Chat page. Only rendered when the current user has previously
+	 * dismissed the panel — otherwise there's nothing to restore.
+	 */
+	private static function render_discover_restore(): void {
+		$user_id = get_current_user_id();
+		if ( $user_id <= 0 || ! OpenclaWP_Admin::discover_is_dismissed( $user_id ) ) {
+			return;
+		}
+
+		$restore_url = wp_nonce_url(
+			add_query_arg(
+				array( 'action' => OpenclaWP_Admin::ACTION_DISCOVER_RESTORE ),
+				admin_url( 'admin-post.php' )
+			),
+			OpenclaWP_Admin::ACTION_DISCOVER_RESTORE
+		);
+
+		?>
+		<hr />
+		<p class="description">
+			<?php esc_html_e( 'You have hidden the "Discover capabilities" panel on the Chat page.', 'openclawp' ); ?>
+			<a href="<?php echo esc_url( $restore_url ); ?>">
+				<?php esc_html_e( 'Show it again', 'openclawp' ); ?>
+			</a>
+		</p>
 		<?php
 	}
 

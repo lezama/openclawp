@@ -25,10 +25,9 @@ final class OpenclaWP_Mcp_Admin {
 		// Hide-when-empty: until at least one MCP server exists the menu
 		// item is skipped, but the admin URL still resolves so deep links
 		// (and the "Add new" affordance from the parent menu) keep working.
-		$parent = OpenclaWP_Admin_Menu_Visibility::parent_for(
-			self::PAGE_SLUG,
-			! empty( OpenclaWP_Mcp_Server_Store::all() )
-		);
+		// The population check lives on the menu-visibility helper so the
+		// Discover panel on the Chat page sees the same state.
+		$parent = OpenclaWP_Admin_Menu_Visibility::parent_for_slug( self::PAGE_SLUG );
 		add_submenu_page(
 			$parent,
 			__( 'MCP Servers', 'openclawp' ),

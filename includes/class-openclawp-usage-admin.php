@@ -21,10 +21,9 @@ final class OpenclaWP_Usage_Admin {
 
 	public static function register_submenu(): void {
 		// Hide-when-empty: don't surface the Usage tab until at least one
-		// chat turn has been recorded. `get_recent( 1 )` is cheap — it caps
-		// the underlying WP_Query at a single row.
-		$has_usage = ! empty( OpenclaWP_Usage_Store::get_recent( 1 ) );
-		$parent    = OpenclaWP_Admin_Menu_Visibility::parent_for( self::PAGE_SLUG, $has_usage );
+		// chat turn has been recorded. The bounded `get_recent( 1 )` check
+		// lives on the menu-visibility helper for reuse by the Discover panel.
+		$parent = OpenclaWP_Admin_Menu_Visibility::parent_for_slug( self::PAGE_SLUG );
 		add_submenu_page(
 			$parent,
 			__( 'Usage', 'openclawp' ),
