@@ -303,6 +303,14 @@ final class OpenclaWP_Admin {
 				'create_label'   => __( 'Add MCP client', 'openclawp' ),
 				'open_label'     => __( 'Manage', 'openclawp' ),
 			),
+			array(
+				'slug'           => 'openclawp-agent-files',
+				'label'          => __( 'Agent files', 'openclawp' ),
+				'description'    => __( 'Author markdown documents (AGENTS.md, SOUL.md, etc.) that customise agent behaviour — no PHP required.', 'openclawp' ),
+				'count_callback' => $count_callback,
+				'create_label'   => __( 'Author a file', 'openclawp' ),
+				'open_label'     => __( 'Manage', 'openclawp' ),
+			),
 		);
 
 		/**

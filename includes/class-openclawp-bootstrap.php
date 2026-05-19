@@ -36,6 +36,7 @@ final class OpenclaWP_Bootstrap {
 		add_action( 'init', array( 'OpenclaWP_Oauth_Store', 'register_post_types' ), 5 );
 		add_action( 'init', array( __CLASS__, 'register_blocks' ), 10 );
 		OpenclaWP_Agent_Registrar::register();
+		OpenclaWP_Agent_Files_Store::register();
 		OpenclaWP_Routine_Registrar::register();
 		OpenclaWP_Abilities::register();
 		OpenclaWP_Mcp_Client_Bridge::register();
@@ -74,6 +75,7 @@ final class OpenclaWP_Bootstrap {
 			OpenclaWP_Decisions_Admin::register();
 			OpenclaWP_Custom_Tools_Admin::register();
 			OpenclaWP_Knowledge_Base_Admin::register();
+			OpenclaWP_Agent_Files_Admin::register();
 			OpenclaWP_Oauth_Admin::register();
 			OpenclaWP_Admin_Bar_Panel::register();
 		}

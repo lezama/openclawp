@@ -218,6 +218,12 @@ final class OpenclaWP_Admin_Menu_Visibility {
 					return null;
 				}
 				return count( OpenclaWP_Mcp_Client_Store::all() );
+
+			case 'openclawp-agent-files':
+				if ( ! class_exists( 'OpenclaWP_Agent_Files_Store' ) ) {
+					return null;
+				}
+				return count( OpenclaWP_Agent_Files_Store::all() );
 		}
 
 		return null;
