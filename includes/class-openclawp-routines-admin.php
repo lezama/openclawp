@@ -27,8 +27,12 @@ final class OpenclaWP_Routines_Admin {
 	}
 
 	public static function register_submenu(): void {
+		// Hide-when-empty: until something has called `wp_register_routine()`
+		// the surface has nothing to render, so skip the sidebar entry.
+		$has_routines = function_exists( 'wp_get_routines' ) && ! empty( wp_get_routines() );
+		$parent       = OpenclaWP_Admin_Menu_Visibility::parent_for( self::PAGE_SLUG, $has_routines );
 		add_submenu_page(
-			OpenclaWP_Admin::PAGE_SLUG,
+			$parent,
 			__( 'Routines', 'openclawp' ),
 			__( 'Routines', 'openclawp' ),
 			'manage_options',

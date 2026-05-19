@@ -690,8 +690,16 @@ final class OpenclaWP_Whatsapp {
 	/* ------------------------------ Settings ------------------------------ */
 
 	public static function register_settings_menu(): void {
+		// Hide-when-empty: until Meta Cloud API credentials are saved the
+		// WhatsApp tab points at an empty form — first-time setup lives
+		// inside the Channels card. The settings page itself stays reachable
+		// at admin.php?page=openclawp-whatsapp.
+		$settings   = self::settings();
+		$configured = '' !== trim( (string) $settings['access_token'] )
+			|| '' !== trim( (string) $settings['phone_number_id'] );
+		$parent     = OpenclaWP_Admin_Menu_Visibility::parent_for( 'openclawp-whatsapp', $configured );
 		add_submenu_page(
-			'openclawp',
+			$parent,
 			__( 'WhatsApp', 'openclawp' ),
 			__( 'WhatsApp', 'openclawp' ),
 			'manage_options',

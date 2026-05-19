@@ -22,8 +22,15 @@ final class OpenclaWP_Mcp_Admin {
 	}
 
 	public static function register_submenu(): void {
+		// Hide-when-empty: until at least one MCP server exists the menu
+		// item is skipped, but the admin URL still resolves so deep links
+		// (and the "Add new" affordance from the parent menu) keep working.
+		$parent = OpenclaWP_Admin_Menu_Visibility::parent_for(
+			self::PAGE_SLUG,
+			! empty( OpenclaWP_Mcp_Server_Store::all() )
+		);
 		add_submenu_page(
-			OpenclaWP_Admin::PAGE_SLUG,
+			$parent,
 			__( 'MCP Servers', 'openclawp' ),
 			__( 'MCP Servers', 'openclawp' ),
 			'manage_options',

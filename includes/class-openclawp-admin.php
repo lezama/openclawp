@@ -42,6 +42,13 @@ final class OpenclaWP_Admin {
 		);
 	}
 
+	/**
+	 * TODO: progressive disclosure follow-up — render a "Discover" /
+	 * Quick-start panel above (or inside) the chat block when most
+	 * capability submenu items are hidden. The full hide-when-empty
+	 * pass landed in ux/menu-hide-when-empty; the discover panel is
+	 * tracked separately so this PR stays focused on menu visibility.
+	 */
 	public static function render_chat_page(): void {
 		?>
 		<div class="wrap openclawp-wrap">
