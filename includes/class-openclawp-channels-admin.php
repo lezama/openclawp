@@ -155,7 +155,7 @@ final class OpenclaWP_Channels_Admin {
 		<div class="wrap openclawp-wrap openclawp-channels">
 			<h1><?php esc_html_e( 'Channels', 'openclawp' ); ?></h1>
 			<p class="description">
-				<?php esc_html_e( 'Surfaces your agent listens on. Each channel pairs an external messaging surface (WhatsApp, Telegram, …) with the agents/chat dispatcher.', 'openclawp' ); ?>
+				<?php esc_html_e( 'Connect your agent to messaging apps like WhatsApp and Telegram. Each channel forwards incoming messages to the agent and posts replies back.', 'openclawp' ); ?>
 			</p>
 
 			<?php if ( empty( $channels ) ) : ?>
