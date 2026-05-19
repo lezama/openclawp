@@ -4,8 +4,9 @@
 	"private": true,
 	"description": "Build pipeline for openclaWP's chat block. The plugin itself is plain PHP — this only exists to bundle the React-driven chat surface that talks to the openclaWP agenttic JSON-RPC bridge.",
 	"scripts": {
-		"build": "npm run build:chat && npm run build:routines",
+		"build": "npm run build:chat && npm run build:panel && npm run build:routines",
 		"build:chat": "wp-scripts build blocks/chat/src/view.js --output-path=blocks/chat/build",
+		"build:panel": "wp-scripts build blocks/chat-panel/src/view.js --output-path=blocks/chat-panel/build",
 		"build:routines": "wp-scripts build blocks/routines/src/view.js --output-path=blocks/routines/build && cp node_modules/@wordpress/dataviews/build-style/style.css blocks/routines/build/view.css",
 		"start": "wp-scripts start blocks/chat/src/view.js --output-path=blocks/chat/build",
 		"lint": "eslint blocks",
