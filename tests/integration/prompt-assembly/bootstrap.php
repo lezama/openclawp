@@ -39,6 +39,9 @@ require_once __DIR__ . '/PromptPayloadAssembler.php';
 if ( ! isset( $GLOBALS['openclawp_test_ability_registry'] ) ) {
 	$GLOBALS['openclawp_test_ability_registry'] = array();
 }
+if ( ! isset( $GLOBALS['openclawp_test_abilities_registry'] ) ) {
+	$GLOBALS['openclawp_test_abilities_registry'] = array();
+}
 if ( ! isset( $GLOBALS['openclawp_test_agent_registry'] ) ) {
 	$GLOBALS['openclawp_test_agent_registry'] = array();
 }
@@ -86,6 +89,9 @@ if ( ! function_exists( 'wp_register_ability' ) ) {
 			isset( $args['input_schema'] ) && is_array( $args['input_schema'] ) ? $args['input_schema'] : array( 'type' => 'object' )
 		);
 		$GLOBALS['openclawp_test_ability_registry'][ $name ] = $ability;
+		// ToolDiscoveryTest defines wp_get_ability() first when the full
+		// PHPUnit suite runs, and that stub reads this plural registry.
+		$GLOBALS['openclawp_test_abilities_registry'][ $name ] = $ability;
 		return $ability;
 	}
 }

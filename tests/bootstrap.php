@@ -34,6 +34,14 @@ if ( ! function_exists( 'add_action' ) ) {
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( string $hook, callable $cb, int $priority = 10, int $accepted_args = 1 ): void {}
 }
+if ( ! function_exists( 'do_action' ) ) {
+	function do_action( string $hook, ...$args ): void {
+		$cb = $GLOBALS['openclawp_test_actions'][ $hook ] ?? null;
+		if ( null !== $cb ) {
+			$cb( ...$args );
+		}
+	}
+}
 if ( ! function_exists( 'apply_filters' ) ) {
 	function apply_filters( string $hook, $value, ...$args ) {
 		// Tests that need to assert filter dispatch can set
@@ -106,6 +114,16 @@ if ( ! function_exists( 'sanitize_title' ) ) {
 if ( ! function_exists( 'sanitize_key' ) ) {
 	function sanitize_key( string $key ): string {
 		return strtolower( (string) preg_replace( '/[^a-z0-9_\-]/i', '', $key ) );
+	}
+}
+if ( ! function_exists( 'sanitize_text_field' ) ) {
+	function sanitize_text_field( string $text ): string {
+		return trim( preg_replace( '/[\r\n\t ]+/', ' ', strip_tags( $text ) ) ?? '' );
+	}
+}
+if ( ! function_exists( 'sanitize_textarea_field' ) ) {
+	function sanitize_textarea_field( string $text ): string {
+		return trim( preg_replace( '/[\r\t ]+/', ' ', strip_tags( $text ) ) ?? '' );
 	}
 }
 if ( ! function_exists( 'wp_http_validate_url' ) ) {

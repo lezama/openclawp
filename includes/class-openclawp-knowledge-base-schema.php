@@ -8,9 +8,9 @@
  * engine. The table is created on plugin activation and on version
  * bumps via a stored DB-version option.
  *
- * Phase 1 only stores plain text. Phase 2 will add an `embedding` column
- * (see follow-up issue) and switch the same ability to vector lookups
- * when a provider is configured.
+ * The table keeps plain text as the canonical source and includes optional
+ * embedding metadata columns so vector retrieval can be layered in without
+ * changing the ability contract.
  *
  * @package OpenclaWP
  * @since   0.7.0
@@ -23,7 +23,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class OpenclaWP_Knowledge_Base_Schema {
 
-	public const DB_VERSION        = '1';
+	public const DB_VERSION        = '2';
 	public const DB_VERSION_OPTION = 'openclawp_kb_db_version';
 
 	public const SOURCE_POST = 'post';
@@ -72,9 +72,14 @@ final class OpenclaWP_Knowledge_Base_Schema {
 			title VARCHAR(255) NOT NULL DEFAULT '',
 			chunk_index INT UNSIGNED NOT NULL DEFAULT 0,
 			content LONGTEXT NOT NULL,
+			embedding LONGTEXT NULL,
+			embedding_provider VARCHAR(64) NOT NULL DEFAULT '',
+			embedding_model VARCHAR(128) NOT NULL DEFAULT '',
+			embedding_dimensions INT UNSIGNED NOT NULL DEFAULT 0,
 			indexed_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),
 			KEY source_lookup (source_type, source_id, chunk_index),
+			KEY embedding_lookup (embedding_provider, embedding_model),
 			FULLTEXT KEY content_search (title, content)
 		) {$charset};";
 

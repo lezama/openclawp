@@ -28,13 +28,18 @@ Built on top of [`Automattic/agents-api`](https://github.com/Automattic/agents-a
 | **REST endpoints** | `POST /openclawp/v1/chat` for browser UIs, `GET /openclawp/v1/chat/{session}` for transcripts | ✅ |
 | **Multi-turn sessions** | Each conversation is a CPT (`openclawp_session`); history follows the user across requests | ✅ |
 | **Tool use** | Agents can call read-only abilities — recent posts, comment counts, active plugins, `who-am-I` — bundled with the example agent | ✅ |
+| **Content abilities** | Built-in post/page abilities for list/get/create/update/delete, with capability checks and explicit effect metadata for confirmation gates | ✅ |
+| **Diff, snapshots, rollback** | Mutating content abilities create `openclawp_snapshot` before-images; agents can preview diffs and restore a prior snapshot | ✅ |
 | **Channels admin** | wp-admin Channels list view (`openclaWP → Channels`) for managing connectors per-site | ✅ |
 | **Workflows** | Compose agents and abilities into deterministic recipes with `${inputs.x}` / `${steps.y.output.z}` bindings. CPT-backed Store + Run Recorder; runs hit `agents/run-workflow` (canonical dispatcher) and the openclaWP-shipped runtime persists every run for later inspection. wp-admin → openclaWP → Workflows lists registered workflows, has a **Run now** form per workflow, and a recent-runs list with per-step trace. Built on the [agents-api workflow substrate](https://github.com/Automattic/agents-api/pull/114). | ✅ |
 | **Local-first inference** | Default Quick Start runs against [Ollama](https://ollama.com/) on `localhost`. No API key, no external service. Swap in Anthropic / OpenAI / Gemini when you want. | ✅ |
 | **AI provider routing** | Per-agent provider + model selection via the standard WordPress AI client | ✅ |
+| **Budgets + usage guardrails** | Per-turn usage recording plus optional daily/monthly cost/turn caps and max tool calls per turn | ✅ |
+| **Memory + KB hooks** | Explicit, consented memory abilities and KB storage with optional embedding/vector search extension points | ✅ |
+| **Agency automation factory** | Blueprints for client use cases, workspace store, site automation audit, connector plans, and generated demo packages | ✅ |
 | **Connector: WhatsApp via wacli** | Pair as a WhatsApp linked device using [`openclaw/wacli`](https://github.com/openclaw/wacli)'s whatsmeow protocol | ⚠️ unofficial |
 | **Connector: WhatsApp Cloud API** | Meta's official Graph API, requires Business account + access token | ✅ alternative |
-| **More connectors (Telegram, Slack, Email, …)** | The base class is in agents-api; build them like the wacli channel | ➖ not started |
+| **More connectors (Telegram, Slack, Email, …)** | Telegram and generic external WhatsApp gateways are available behind opt-in filters; Slack/Email remain follow-ups | 🚧 |
 
 ---
 
@@ -47,7 +52,7 @@ The WordPress AI agent space has several plugins now. They overlap in the obviou
 | Substrate | `agents-api` + WP 7.0 AI Client | WP 7.0 AI Client | self | self | self | WP 7.0 AI Client + Abilities API |
 | Provider | any [Connectors API](https://wordpress.org/plugins/ai-provider-for-openai/) plugin | any Connectors API plugin | Anthropic-first | OpenAI/Anthropic/Google | multi-provider | multi-provider |
 | Per-agent MCP server | ✅ scoped to one agent's tools | via [WP MCP Adapter](https://github.com/WordPress/mcp-adapter) (site-wide) | — | ✅ site-wide | via WP MCP Adapter | — |
-| MCP client | — | — | ✅ HTTP+stdio | ✅ | — | — |
+| MCP client | ✅ bridged into Abilities API | — | ✅ HTTP+stdio | ✅ | — | — |
 | Workflows | ✅ deterministic, CPT-backed, run recorder | — | — | — | — | (on roadmap) |
 | Per-turn cost dashboard | ✅ | — (tracks tokens) | ✅ | — | — | (on roadmap) |
 | WordPress Playground demo | ✅ | ✅ | — | — | ✅ | ✅ |
@@ -173,6 +178,26 @@ The agent loop is the same regardless of surface; pick whichever fits the caller
 | Channels (e.g., WhatsApp) | Reaching the agent from outside WordPress entirely |
 
 REST chat routes default to `manage_options`; gate with `openclawp_rest_permission_callback`. Channel webhooks are HMAC-gated.
+
+### Bundled ability packs
+
+The production ability pack is intentionally WordPress-core first. It ships content tools for posts/pages (`openclawp/list-content`, `get-content`, `create-content`, `preview-content-update`, `update-content`, `delete-content`) plus snapshot tools (`list-content-snapshots`, `restore-content-snapshot`). Writes are capability-checked and tagged with `meta.effect` so the confirmation gate can pause them before execution.
+
+`openclawp/remember` and `openclawp/search-memory` store explicit memories with scope, provenance, confidence, consent, and expiry metadata. The knowledge-base table keeps full-text retrieval as the default path and exposes `openclawp_kb_vector_search_results` for embedding-backed retrieval without tying the plugin to one provider.
+
+Elementor-specific abilities are deliberately not included.
+
+### Agency automation factory
+
+openclaWP can generate client-specific automation packages from reusable agency blueprints. The agency flow is:
+
+1. Run `openclawp/audit-automation-opportunities` or `GET /wp-json/openclawp/v1/agency/audit`.
+2. Pick a blueprint such as `lead-concierge`, `support-kb`, `booking-agent`, `quote-agent`, `form-followup`, or `ecommerce-recovery`.
+3. Create a client workspace with goals, channels, and available connectors.
+4. Call `openclawp/generate-client-agent-package` or `POST /wp-json/openclawp/v1/agency/generate`.
+5. Review the generated agent registration args, workflow spec, connector plan, KB plan, approval policy, and demo script.
+
+The wp-admin surface lives at **openclaWP → Agency**. Full runbook: [`docs/agency-automation.md`](docs/agency-automation.md).
 
 ---
 

@@ -218,11 +218,13 @@ final class OpenclaWP_Usage_Store {
 
 	private static function date_constraint( array $filter ): string {
 		$days = isset( $filter['days'] ) ? (int) $filter['days'] : 0;
-		if ( $days <= 0 && ( $filter['period'] ?? '' ) !== 'month' ) {
+		if ( $days <= 0 && ! in_array( (string) ( $filter['period'] ?? '' ), array( 'day', 'month' ), true ) ) {
 			return '';
 		}
 		if ( ( $filter['period'] ?? '' ) === 'month' ) {
 			$after = gmdate( 'Y-m-01 00:00:00' );
+		} elseif ( ( $filter['period'] ?? '' ) === 'day' ) {
+			$after = gmdate( 'Y-m-d 00:00:00' );
 		} else {
 			$after = gmdate( 'Y-m-d 00:00:00', strtotime( '-' . $days . ' days' ) );
 		}

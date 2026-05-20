@@ -38,6 +38,8 @@ final class OpenclaWP_Tool_Executor implements WP_Agent_Tool_Executor {
 
 	private array $runtime_context;
 
+	private int $tool_call_count = 0;
+
 	public function __construct( array $name_to_ability, array $delegate_targets = array(), array $runtime_context = array() ) {
 		$this->name_to_ability  = $name_to_ability;
 		$this->delegate_targets = $delegate_targets;
@@ -89,6 +91,31 @@ final class OpenclaWP_Tool_Executor implements WP_Agent_Tool_Executor {
 		$gate = $this->maybe_gate( $ability_name, $declared_name, $parameters );
 		if ( null !== $gate ) {
 			return $gate;
+		}
+
+		++$this->tool_call_count;
+		$pre_execute = apply_filters(
+			'openclawp_pre_tool_execute',
+			null,
+			array(
+				'ability'          => $ability_name,
+				'declared_name'    => $declared_name,
+				'parameters'       => $parameters,
+				'tool_call'        => $tool_call,
+				'context'          => $context,
+				'runtime_context'  => $this->runtime_context,
+				'tool_call_index'  => $this->tool_call_count,
+			)
+		);
+		if ( is_wp_error( $pre_execute ) ) {
+			return array(
+				'success'   => false,
+				'tool_name' => $declared_name,
+				'error'     => $pre_execute->get_error_message(),
+			);
+		}
+		if ( is_array( $pre_execute ) ) {
+			return $pre_execute;
 		}
 
 		$result = $ability->execute( $parameters );

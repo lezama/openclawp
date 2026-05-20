@@ -216,7 +216,7 @@ namespace OpenclaWP\Tests\Unit {
 		}
 
 		protected function tearDown(): void {
-			unset( $GLOBALS['wpdb'], $GLOBALS['openclawp_test_posts'], $GLOBALS['openclawp_test_options'] );
+			unset( $GLOBALS['wpdb'], $GLOBALS['openclawp_test_posts'], $GLOBALS['openclawp_test_options'], $GLOBALS['openclawp_test_filters'] );
 			parent::tearDown();
 		}
 
@@ -304,6 +304,30 @@ namespace OpenclaWP\Tests\Unit {
 			$count             = OpenclaWP_Knowledge_Base_Indexer::index_post( 11 );
 			$this->assertSame( 0, $count );
 			$this->assertSame( array(), OpenclaWP_Knowledge_Base_Search::search( 'pineapple' ) );
+		}
+
+		public function test_vector_search_filter_can_bypass_sql_path(): void {
+			$GLOBALS['openclawp_test_filters']['openclawp_kb_vector_search_results'] = static function ( $results, string $query, int $limit ) {
+				unset( $results );
+				return array(
+					array(
+						'source_type' => 'url',
+						'source_id'   => 'docs',
+						'title'       => 'Vector result',
+						'content'     => 'Matched by embeddings for ' . $query,
+						'score'       => 0.99,
+						'source_ref'  => 'https://example.test/docs',
+					),
+				);
+			};
+
+			$results = OpenclaWP_Knowledge_Base_Search::search( 'semantic query', 5 );
+
+			$this->assertCount( 1, $results );
+			$this->assertSame( 'url', $results[0]['source'] );
+			$this->assertSame( 'Vector result', $results[0]['title'] );
+			$this->assertSame( 0.99, $results[0]['score'] );
+			$this->assertSame( 'https://example.test/docs', $results[0]['permalink'] );
 		}
 	}
 

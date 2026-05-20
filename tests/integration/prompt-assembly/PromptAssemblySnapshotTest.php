@@ -43,6 +43,7 @@ final class PromptAssemblySnapshotTest extends TestCase {
 	 */
 	protected function setUp(): void {
 		$GLOBALS['openclawp_test_ability_registry'] = array();
+		$GLOBALS['openclawp_test_abilities_registry'] = array();
 		$GLOBALS['openclawp_test_agent_registry']   = array();
 
 		$true_filter = static fn( $value ) => true;

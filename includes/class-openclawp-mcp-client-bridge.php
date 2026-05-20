@@ -176,6 +176,9 @@ final class OpenclaWP_Mcp_Client_Bridge {
 						 */
 						return (bool) apply_filters( 'openclawp_mcp_client_permission', current_user_can( 'manage_options' ) );
 					},
+					'meta'                => array(
+						'effect' => OpenclaWP_Tool_Effects::EFFECT_EXTERNAL,
+					),
 				)
 			);
 		}

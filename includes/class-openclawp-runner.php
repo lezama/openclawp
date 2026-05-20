@@ -141,10 +141,11 @@ final class OpenclaWP_Runner {
 			);
 		}
 
-		$messages   = $session['messages'];
+		$message_for_model = self::message_with_attachments( $message, $runtime_context );
+		$messages          = $session['messages'];
 		$messages[] = array(
 			'role'    => 'user',
-			'content' => $message,
+			'content' => $message_for_model,
 		);
 
 		$tools = OpenclaWP_Tools_Resolver::for_agent( $agent );
@@ -248,6 +249,59 @@ final class OpenclaWP_Runner {
 		}
 
 		return $messages;
+	}
+
+	/**
+	 * Add a provider-neutral text summary of channel attachments to the user turn.
+	 *
+	 * The AI Client still receives plain text today; this helper preserves
+	 * multimodal context (caption, mime type, media ID, URL) until a provider
+	 * connector can pass native image/audio parts through.
+	 */
+	public static function message_with_attachments( string $message, array $runtime_context ): string {
+		$attachments = isset( $runtime_context['attachments'] ) && is_array( $runtime_context['attachments'] )
+			? $runtime_context['attachments']
+			: array();
+		if ( empty( $attachments ) ) {
+			return $message;
+		}
+
+		$lines = array();
+		foreach ( array_slice( $attachments, 0, 12 ) as $index => $attachment ) {
+			if ( ! is_array( $attachment ) ) {
+				continue;
+			}
+			$parts = array();
+			foreach ( array( 'type', 'mime_type', 'media_id', 'id', 'filename', 'url', 'caption', 'alt' ) as $key ) {
+				if ( empty( $attachment[ $key ] ) || ! is_scalar( $attachment[ $key ] ) ) {
+					continue;
+				}
+				$value = trim( preg_replace( '/\s+/', ' ', (string) $attachment[ $key ] ) ?? '' );
+				if ( '' !== $value ) {
+					$parts[] = $key . '=' . $value;
+				}
+			}
+			if ( ! empty( $parts ) ) {
+				$lines[] = sprintf( 'Attachment %d: %s', $index + 1, implode( '; ', $parts ) );
+			}
+		}
+
+		/**
+		 * Filters the text lines appended to a model prompt for attachments.
+		 *
+		 * Return an empty array to hide attachments from the model, or redact
+		 * sensitive URLs while leaving captions and media IDs available.
+		 *
+		 * @param array $lines
+		 * @param array $attachments
+		 * @param array $runtime_context
+		 */
+		$lines = (array) apply_filters( 'openclawp_message_attachments_context', $lines, $attachments, $runtime_context );
+		if ( empty( $lines ) ) {
+			return $message;
+		}
+
+		return rtrim( $message ) . "\n\nAttachments:\n" . implode( "\n", $lines );
 	}
 
 	/**

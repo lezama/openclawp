@@ -32,6 +32,10 @@ final class OpenclaWP_Bootstrap {
 		add_action( 'init', array( 'OpenclaWP_Mcp_Client_Store', 'register_post_type' ), 5 );
 		add_action( 'init', array( 'OpenclaWP_Decisions_Store', 'register_post_type' ), 5 );
 		add_action( 'init', array( 'OpenclaWP_Custom_Tools_Store', 'register_post_type' ), 5 );
+		add_action( 'init', array( 'OpenclaWP_Content_Snapshots', 'register_post_type' ), 5 );
+		add_action( 'init', array( 'OpenclaWP_Memory_Store', 'register_post_type' ), 5 );
+		add_action( 'init', array( 'OpenclaWP_Agency_Workspace_Store', 'register_post_type' ), 5 );
+		add_action( 'init', array( 'OpenclaWP_Agency_Demo_Store', 'register_post_type' ), 5 );
 		add_action( 'init', array( 'OpenclaWP_Knowledge_Base_Schema', 'maybe_install' ), 5 );
 		add_action( 'init', array( 'OpenclaWP_Oauth_Store', 'register_post_types' ), 5 );
 		add_action( 'init', array( __CLASS__, 'register_blocks' ), 10 );
@@ -39,13 +43,17 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Agent_Files_Store::register();
 		OpenclaWP_Routine_Registrar::register();
 		OpenclaWP_Abilities::register();
+		OpenclaWP_Content_Abilities::register();
+		OpenclaWP_Agency_Abilities::register();
 		OpenclaWP_Mcp_Client_Bridge::register();
 		OpenclaWP_Custom_Tools_Registrar::register();
 		OpenclaWP_Knowledge_Base_Search::register();
 		OpenclaWP_Knowledge_Base_Indexer::register();
+		OpenclaWP_Memory_Abilities::register();
 		OpenclaWP_Event_Sink::register();
 		OpenclaWP_Tracer::register();
 		OpenclaWP_Usage_Recorder::register();
+		OpenclaWP_Budget_Guard::register();
 		// Adapter path (WP 7.0 official mcp-adapter) is always wired —
 		// it silently no-ops when the adapter isn't loaded so older sites
 		// fall back to the legacy JSON-RPC route below.
@@ -59,6 +67,7 @@ final class OpenclaWP_Bootstrap {
 		}
 		OpenclaWP_Oauth_Server::register();
 		OpenclaWP_Rest::register();
+		OpenclaWP_Agency_Rest::register();
 		OpenclaWP_Decisions_Rest::register();
 		OpenclaWP_Agenttic_Bridge::register();
 		OpenclaWP_Canonical_Chat_Handler::register();
@@ -79,6 +88,7 @@ final class OpenclaWP_Bootstrap {
 			OpenclaWP_Oauth_Admin::register();
 			OpenclaWP_Admin_Bar_Panel::register();
 			OpenclaWP_Setup_Wizard::register();
+			OpenclaWP_Agency_Admin::register();
 		}
 
 		/**

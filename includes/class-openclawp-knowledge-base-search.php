@@ -118,14 +118,29 @@ final class OpenclaWP_Knowledge_Base_Search {
 	 * @return array<int,array<string,mixed>>
 	 */
 	public static function search( string $query, int $limit = self::DEFAULT_LIMIT ): array {
-		global $wpdb;
-
 		$query = trim( $query );
 		if ( '' === $query ) {
 			return array();
 		}
 
 		$limit = max( 1, min( self::MAX_LIMIT, $limit ) );
+
+		/**
+		 * Allows an embeddings/vector provider to satisfy KB search.
+		 *
+		 * Return an array of normalized result rows to bypass SQL FULLTEXT.
+		 * Return null to use the built-in full-text path.
+		 *
+		 * @param array|null $results
+		 * @param string     $query
+		 * @param int        $limit
+		 */
+		$vector_results = apply_filters( 'openclawp_kb_vector_search_results', null, $query, $limit );
+		if ( is_array( $vector_results ) ) {
+			return self::normalize_external_results( $vector_results, $limit );
+		}
+
+		global $wpdb;
 		$table = OpenclaWP_Knowledge_Base_Schema::table_name();
 
 		// Use NATURAL LANGUAGE MODE so user prose works without boolean operators.
@@ -159,6 +174,25 @@ final class OpenclaWP_Knowledge_Base_Search {
 		}
 
 		return $results;
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $rows
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function normalize_external_results( array $rows, int $limit = self::DEFAULT_LIMIT ): array {
+		$out = array();
+		foreach ( array_slice( $rows, 0, max( 1, min( self::MAX_LIMIT, $limit ) ) ) as $row ) {
+			$out[] = array(
+				'source'    => (string) ( $row['source'] ?? $row['source_type'] ?? '' ),
+				'source_id' => (string) ( $row['source_id'] ?? '' ),
+				'title'     => (string) ( $row['title'] ?? '' ),
+				'excerpt'   => (string) ( $row['excerpt'] ?? $row['content'] ?? '' ),
+				'score'     => (float) ( $row['score'] ?? 0 ),
+				'permalink' => (string) ( $row['permalink'] ?? $row['source_ref'] ?? '' ),
+			);
+		}
+		return $out;
 	}
 
 	/**
