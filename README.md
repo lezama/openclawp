@@ -198,6 +198,7 @@ openclaWP can generate client-specific automation packages from reusable agency 
 5. Review the generated agent registration args, workflow spec, connector plan, KB plan, approval policy, and demo script.
 
 The wp-admin surface lives at **openclaWP → Agency**. Full runbook: [`docs/agency-automation.md`](docs/agency-automation.md).
+For a WordPress.com Atomic staging/demo install, use [`docs/atomic-demo.md`](docs/atomic-demo.md).
 
 ---
 
@@ -308,6 +309,7 @@ End-to-end (REST → ability → `proc_open` → real WhatsApp) is exercised man
 - [`tools/wp-env/README.md`](tools/wp-env/README.md) — wp-env scaffold troubleshooting + advanced flags
 - [`docs/whatsapp-setup.md`](docs/whatsapp-setup.md) — Meta-side runbook for the official Cloud API channel
 - [`docs/local-ollama.md`](docs/local-ollama.md) — agent runbook for routing chat to a local Gemma via Ollama
+- [`docs/atomic-demo.md`](docs/atomic-demo.md) — WordPress.com Atomic deployment and agency demo runbook
 - [`docs/provider-precedence.md`](docs/provider-precedence.md) — recorded design for per-agent / per-site provider routing
 
 ---

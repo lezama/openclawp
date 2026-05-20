@@ -1,0 +1,77 @@
+name: Deploy to WordPress.com
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  Deploy-Plugin:
+    name: Deploy-Plugin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Composer dependencies
+        run: composer install --no-dev --prefer-dist --no-progress --optimize-autoloader
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Upload WordPress.com artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpcom
+          path: |
+            .
+            !.git*
+            !.github/**
+            !.wordpress-org/**
+            !bin/**
+            !docs/**
+            !node_modules/**
+            !node_modules
+            !tests/**
+            !tools/**
+            !vendor/bin/**
+            !vendor/**/docs/**
+            !vendor/**/test/**
+            !vendor/**/tests/**
+            !vendor/**/.git/**
+            !blocks/chat/src/**
+            !blocks/chat-panel/src/**
+            !blocks/routines/src/**
+            !composer.json
+            !composer.lock
+            !eslint.config.mjs
+            !homeboy.json
+            !package.json
+            !package-lock.json
+            !phpcs.xml.dist
+            !phpstan.neon.dist
+            !phpunit.xml.dist
+            !playwright.config.js
+            !playwright-report/**
+            !test-results/**
+            !README.md
+          retention-days: 1

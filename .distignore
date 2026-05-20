@@ -17,6 +17,7 @@ vendor/**/test
 vendor/**/tests
 
 blocks/chat/src
+blocks/chat-panel/src
 blocks/routines/src
 
 composer.json

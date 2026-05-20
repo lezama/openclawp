@@ -14,6 +14,10 @@ openclaWP's agency layer turns an existing WordPress site into a launch point fo
    `POST /wp-json/openclawp/v1/agency/generate`
 5. Configure missing connector packs, index the KB, review approvals, and run the demo prompts.
 
+The same flow is available in wp-admin at **openclaWP -> Agency**. Use the
+generator form to pick a blueprint, save a client workspace, mark available
+connector packs, and save the generated demo package for a sales call.
+
 The generated package contains:
 
 - `agent_registration`: args ready to pass to `wp_register_agent()`.
@@ -81,3 +85,8 @@ Built-in packs:
 - It does not auto-install external CRM/calendar/helpdesk connectors.
 - It does not auto-register generated agents in production. The package returns registration args and workflow specs for review first.
 - It does not include page-builder-specific automation.
+
+## Atomic Demo
+
+For a WordPress.com Atomic staging/demo site, use the deploy and sales-call
+runbook in [docs/atomic-demo.md](atomic-demo.md).
