@@ -212,10 +212,25 @@ final class OpenclaWP_Whatsapp {
 		foreach ( ( $payload['entry'] ?? array() ) as $entry ) {
 			foreach ( ( $entry['changes'] ?? array() ) as $change ) {
 				$value = $change['value'] ?? array();
+				// Meta sidecars sender names in value.contacts[], keyed by
+				// wa_id. Index once so per-message lookups stay O(1). Without
+				// this, every downstream consumer reaches for profile.name
+				// themselves and many forget — agents end up with users titled
+				// by raw E.164 phone instead of "Pedro" / "Florencia" / etc.
+				$names_by_wa_id = array();
+				foreach ( ( $value['contacts'] ?? array() ) as $contact ) {
+					$wa_id = (string) ( $contact['wa_id'] ?? '' );
+					$name  = (string) ( $contact['profile']['name'] ?? '' );
+					if ( '' !== $wa_id && '' !== $name ) {
+						$names_by_wa_id[ $wa_id ] = $name;
+					}
+				}
+
 				foreach ( ( $value['messages'] ?? array() ) as $message ) {
 					$type  = (string) ( $message['type'] ?? '' );
 					$phone = (string) ( $message['from'] ?? '' );
 					$id    = (string) ( $message['id'] ?? '' );
+					$name  = $names_by_wa_id[ $phone ] ?? '';
 					if ( '' === $phone ) {
 						continue;
 					}
@@ -225,7 +240,7 @@ final class OpenclaWP_Whatsapp {
 						if ( '' === $body ) {
 							continue;
 						}
-						$out[] = array( 'type' => 'text', 'phone' => $phone, 'text' => $body, 'id' => $id );
+						$out[] = array( 'type' => 'text', 'phone' => $phone, 'text' => $body, 'id' => $id, 'sender_name' => $name );
 					} elseif ( 'interactive' === $type ) {
 						$interactive = isset( $message['interactive'] ) && is_array( $message['interactive'] ) ? $message['interactive'] : array();
 						$itype       = (string) ( $interactive['type'] ?? '' );
@@ -235,19 +250,20 @@ final class OpenclaWP_Whatsapp {
 						if ( '' === $reply_id ) {
 							continue;
 						}
-						$out[] = array( 'type' => 'text', 'phone' => $phone, 'text' => $reply_id, 'id' => $id );
+						$out[] = array( 'type' => 'text', 'phone' => $phone, 'text' => $reply_id, 'id' => $id, 'sender_name' => $name );
 					} elseif ( 'image' === $type ) {
 						$img = isset( $message['image'] ) && is_array( $message['image'] ) ? $message['image'] : array();
 						if ( empty( $img['id'] ) ) {
 							continue;
 						}
 						$out[] = array(
-							'type'      => 'image',
-							'phone'     => $phone,
-							'id'        => $id,
-							'media_id'  => (string) $img['id'],
-							'mime_type' => (string) ( $img['mime_type'] ?? '' ),
-							'caption'   => (string) ( $img['caption'] ?? '' ),
+							'type'        => 'image',
+							'phone'       => $phone,
+							'id'          => $id,
+							'sender_name' => $name,
+							'media_id'    => (string) $img['id'],
+							'mime_type'   => (string) ( $img['mime_type'] ?? '' ),
+							'caption'     => (string) ( $img['caption'] ?? '' ),
 						);
 					}
 				}
@@ -261,8 +277,9 @@ final class OpenclaWP_Whatsapp {
 	 * sender's phone number, send the reply back to that phone.
 	 */
 	private static function dispatch( array $message, string $agent_slug, int $user_id, array $settings ): bool {
-		$phone = $message['phone'];
-		$text  = $message['text'];
+		$phone       = $message['phone'];
+		$text        = $message['text'];
+		$sender_name = (string) ( $message['sender_name'] ?? '' );
 
 		// Idempotency: skip if we've already processed this message id.
 		if ( '' !== $message['id'] && self::is_already_processed( $message['id'] ) ) {
@@ -295,6 +312,7 @@ final class OpenclaWP_Whatsapp {
 					'external_conversation_id' => $phone,
 					'external_message_id'      => (string) ( $message['id'] ?? '' ),
 					'sender_id'                => $phone,
+					'sender_name'              => $sender_name,
 					'room_kind'                => 'dm',
 				),
 			)
