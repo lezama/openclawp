@@ -24,8 +24,11 @@ defined( 'ABSPATH' ) || exit;
 
 final class OpenclaWP_Oauth_Store {
 
-	public const POST_TYPE_CLIENT = 'openclawp_oauth_client';
-	public const POST_TYPE_TOKEN  = 'openclawp_oauth_token';
+	// CPT slugs capped at 20 chars per register_post_type's enforced limit
+	// (WP throws _doing_it_wrong otherwise). 'opc_' prefix keeps the
+	// namespace recognizable.
+	public const POST_TYPE_CLIENT = 'opc_oauth_client';
+	public const POST_TYPE_TOKEN  = 'opc_oauth_token';
 
 	// Client meta keys.
 	public const META_CLIENT_SECRET_HASH    = '_openclawp_oauth_client_secret_hash';
