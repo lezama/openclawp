@@ -98,10 +98,23 @@ if ( ! function_exists( 'wp_remote_post' ) ) {
 			'url'  => $url,
 			'args' => $args,
 		);
+		if ( isset( $GLOBALS['openclawp_test_http_response'] ) ) {
+			return $GLOBALS['openclawp_test_http_response'];
+		}
 		return array(
 			'response' => array( 'code' => 202, 'message' => 'Accepted' ),
 			'body'     => '',
 		);
+	}
+}
+if ( ! function_exists( 'wp_remote_retrieve_response_code' ) ) {
+	function wp_remote_retrieve_response_code( $response ): int {
+		return (int) ( $response['response']['code'] ?? 0 );
+	}
+}
+if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
+	function wp_remote_retrieve_body( $response ): string {
+		return (string) ( $response['body'] ?? '' );
 	}
 }
 if ( ! function_exists( 'sanitize_title' ) ) {

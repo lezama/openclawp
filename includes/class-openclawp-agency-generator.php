@@ -362,6 +362,13 @@ final class OpenclaWP_Agency_Generator {
 				'Show the internal summary and handoff plan.',
 				'Show required connectors and approvals before production.',
 			),
+			'recording'   => array(
+				'workflow'            => OpenclaWP_Demo_Recorder::WORKFLOW_ID,
+				'plan_ability'        => OpenclaWP_Demo_Recorder::CREATE_PLAN_ABILITY,
+				'record_ability'      => OpenclaWP_Demo_Recorder::RECORD_VIDEO_ABILITY,
+				'voice_over_enabled'  => true,
+				'local_recorder_mode' => 'http-endpoint',
+			),
 			'success_criteria' => (array) ( $blueprint['success_metrics'] ?? array() ),
 			'answers_used' => array_keys( $answers ),
 		);

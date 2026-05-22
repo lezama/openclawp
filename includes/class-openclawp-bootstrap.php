@@ -45,6 +45,7 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Abilities::register();
 		OpenclaWP_Content_Abilities::register();
 		OpenclaWP_Agency_Abilities::register();
+		OpenclaWP_Demo_Recorder::register();
 		OpenclaWP_Mcp_Client_Bridge::register();
 		OpenclaWP_Custom_Tools_Registrar::register();
 		OpenclaWP_Knowledge_Base_Search::register();

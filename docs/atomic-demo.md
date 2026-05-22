@@ -98,6 +98,24 @@ wp post create --post_type=page --post_status=publish --post_title='Support FAQ'
 7. Open openclaWP -> Chat and use one generated demo prompt as the customer scenario.
 8. Close with the production checklist: configure connectors, index KB sources, review approval policy, then register the generated agent/workflow.
 
+## Recording The Demo
+
+openclaWP can generate the storyboard and trigger a local recorder through:
+
+- `openclawp/create-demo-recording-plan`
+- `openclawp/record-demo-video`
+- workflow `openclawp/record-agency-demo`
+
+Run the recorder from your laptop or CI worker, not inside Atomic:
+
+```bash
+node bin/demo-recorder.mjs --port=8765
+```
+
+The plan includes captions and a narration script. On macOS, the recorder can
+use `say` for voice-over and `ffmpeg` to produce an MP4 with audio. See
+`docs/demo-recorder.md`.
+
 ## Good Demo Defaults
 
 For a lead-generation agency demo:
