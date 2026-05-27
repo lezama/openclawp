@@ -244,13 +244,45 @@ final class OpenclaWP_Whatsapp {
 					} elseif ( 'interactive' === $type ) {
 						$interactive = isset( $message['interactive'] ) && is_array( $message['interactive'] ) ? $message['interactive'] : array();
 						$itype       = (string) ( $interactive['type'] ?? '' );
-						$reply_id    = 'button_reply' === $itype
-							? (string) ( $interactive['button_reply']['id'] ?? '' )
-							: ( 'list_reply' === $itype ? (string) ( $interactive['list_reply']['id'] ?? '' ) : '' );
+						$reply_id    = '';
+						if ( 'button_reply' === $itype ) {
+							$reply_id = (string) ( $interactive['button_reply']['id'] ?? '' );
+						} elseif ( 'list_reply' === $itype ) {
+							$reply_id = (string) ( $interactive['list_reply']['id'] ?? '' );
+						} elseif ( 'nfm_reply' === $itype ) {
+							// WhatsApp Flow submission. The form payload arrives as
+							// JSON in response_json. We surface it as a virtual
+							// command `whatsapp_flow:<name>:<json>` so the consumer
+							// can route by flow name and parse the payload.
+							$nfm      = isset( $interactive['nfm_reply'] ) && is_array( $interactive['nfm_reply'] ) ? $interactive['nfm_reply'] : array();
+							$response = (string) ( $nfm['response_json'] ?? '' );
+							$flow_name = (string) ( $nfm['name'] ?? 'flow' );
+							if ( '' !== $response ) {
+								$reply_id = 'whatsapp_flow:' . $flow_name . ':' . $response;
+							}
+						}
 						if ( '' === $reply_id ) {
 							continue;
 						}
 						$out[] = array( 'type' => 'text', 'phone' => $phone, 'text' => $reply_id, 'id' => $id, 'sender_name' => $name );
+					} elseif ( 'reaction' === $type ) {
+						// Message reactions arrive as their own type. Surface as a
+						// virtual command `whatsapp_reaction:<emoji>:<msg_id>` so
+						// the consumer can map reactions to actions (e.g. 👍 on a
+						// match-detail bubble = accept the suggested score).
+						$reaction = isset( $message['reaction'] ) && is_array( $message['reaction'] ) ? $message['reaction'] : array();
+						$emoji    = (string) ( $reaction['emoji'] ?? '' );
+						$target   = (string) ( $reaction['message_id'] ?? '' );
+						if ( '' === $emoji && '' === $target ) {
+							continue;
+						}
+						$out[] = array(
+							'type'        => 'text',
+							'phone'       => $phone,
+							'text'        => 'whatsapp_reaction:' . $emoji . ':' . $target,
+							'id'          => $id,
+							'sender_name' => $name,
+						);
 					} elseif ( 'image' === $type ) {
 						$img = isset( $message['image'] ) && is_array( $message['image'] ) ? $message['image'] : array();
 						if ( empty( $img['id'] ) ) {
@@ -639,9 +671,33 @@ final class OpenclaWP_Whatsapp {
 				'body'   => $body,
 				'action' => array( 'buttons' => $buttons ),
 			);
-			if ( ! empty( $interactive['header'] ) ) {
-				$payload['header'] = array( 'type' => 'text', 'text' => self::truncate( (string) $interactive['header'], 60 ) );
+			self::apply_interactive_header( $payload, $interactive );
+			if ( ! empty( $interactive['footer'] ) ) {
+				$payload['footer'] = array( 'text' => self::truncate( (string) $interactive['footer'], 60 ) );
 			}
+			return $payload;
+		}
+
+		if ( 'flow' === $type ) {
+			// WhatsApp Flow message. Consumer passes a fully-shaped
+			// action.parameters block (flow_id, flow_token, flow_cta,
+			// flow_action, flow_action_payload) — we just package it.
+			$params = isset( $interactive['parameters'] ) && is_array( $interactive['parameters'] ) ? $interactive['parameters'] : array();
+			if ( empty( $params['flow_id'] ) || empty( $params['flow_cta'] ) ) {
+				return null;
+			}
+			$payload = array(
+				'type'   => 'flow',
+				'body'   => $body,
+				'action' => array(
+					'name'       => 'flow',
+					'parameters' => array_merge(
+						array( 'flow_message_version' => '3' ),
+						$params
+					),
+				),
+			);
+			self::apply_interactive_header( $payload, $interactive );
 			if ( ! empty( $interactive['footer'] ) ) {
 				$payload['footer'] = array( 'text' => self::truncate( (string) $interactive['footer'], 60 ) );
 			}
@@ -685,9 +741,7 @@ final class OpenclaWP_Whatsapp {
 					'sections' => $sections,
 				),
 			);
-			if ( ! empty( $interactive['header'] ) ) {
-				$payload['header'] = array( 'type' => 'text', 'text' => self::truncate( (string) $interactive['header'], 60 ) );
-			}
+			self::apply_interactive_header( $payload, $interactive );
 			if ( ! empty( $interactive['footer'] ) ) {
 				$payload['footer'] = array( 'text' => self::truncate( (string) $interactive['footer'], 60 ) );
 			}
@@ -695,6 +749,41 @@ final class OpenclaWP_Whatsapp {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Apply a header to an interactive payload. Supports four header shapes:
+	 *   - $interactive['header'] = "string"            → text header
+	 *   - $interactive['header'] = ['text' => '…']     → text header
+	 *   - $interactive['header'] = ['image' => 'url']  → image header (link)
+	 *   - $interactive['header'] = ['image_id' => '…'] → image header (media id)
+	 *
+	 * Header text is capped at 60 chars per the WhatsApp Cloud API limit.
+	 */
+	private static function apply_interactive_header( array &$payload, array $interactive ): void {
+		$header = $interactive['header'] ?? null;
+		if ( empty( $header ) ) {
+			return;
+		}
+		if ( is_string( $header ) ) {
+			$payload['header'] = array( 'type' => 'text', 'text' => self::truncate( $header, 60 ) );
+			return;
+		}
+		if ( ! is_array( $header ) ) {
+			return;
+		}
+		if ( ! empty( $header['text'] ) ) {
+			$payload['header'] = array( 'type' => 'text', 'text' => self::truncate( (string) $header['text'], 60 ) );
+			return;
+		}
+		if ( ! empty( $header['image'] ) ) {
+			$payload['header'] = array( 'type' => 'image', 'image' => array( 'link' => (string) $header['image'] ) );
+			return;
+		}
+		if ( ! empty( $header['image_id'] ) ) {
+			$payload['header'] = array( 'type' => 'image', 'image' => array( 'id' => (string) $header['image_id'] ) );
+			return;
+		}
 	}
 
 	private static function truncate( string $text, int $max ): string {
