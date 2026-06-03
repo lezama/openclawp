@@ -10,7 +10,7 @@
 		}
 	],
 	"model_preference": {
-		"model": "claude-haiku-4-5"
+		"model": "auto"
 	},
 	"runtime_context": {
 		"client_context": {
