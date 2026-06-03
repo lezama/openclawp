@@ -23,7 +23,8 @@ require_once dirname( __DIR__, 2 ) . '/bootstrap.php';
 // directly (rather than via the substrate bootstrap) because the substrate
 // also tries to register WordPress actions, REST routes, and hooks that
 // aren't available in this minimal PHPUnit environment.
-require_once dirname( __DIR__, 3 ) . '/vendor/automattic/agents-api/src/Registry/class-wp-agent.php';
+require_once dirname( __DIR__, 3 ) . '/vendor/wordpress/agents-api/src/Registry/class-wp-agent-runtime-overrides.php';
+require_once dirname( __DIR__, 3 ) . '/vendor/wordpress/agents-api/src/Registry/class-wp-agent.php';
 
 // Stub the WP AI Client FunctionDeclaration DTO. The real class ships with
 // `wordpress/php-ai-client` (or WP 7.0 core) and is only used at runtime to

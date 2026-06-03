@@ -120,13 +120,14 @@ final class OpenclaWP_Tools_Resolver {
 				}
 
 				$declared_name = self::sanitize_name( $ability_name );
+				$loop_name     = self::loop_name( $declared_name );
 				$description   = method_exists( $ability, 'get_description' ) ? (string) $ability->get_description() : '';
 				$input_schema  = method_exists( $ability, 'get_input_schema' ) ? $ability->get_input_schema() : null;
 				$parameters    = is_array( $input_schema ) ? $input_schema : array( 'type' => 'object', 'properties' => array() );
 
-				$declarations[ $declared_name ] = array(
-					'name'        => $declared_name,
-					'source'      => 'openclawp',
+				$declarations[ $loop_name ] = array(
+					'name'        => $loop_name,
+					'source'      => self::TOOL_SOURCE,
 					'description' => $description,
 					'parameters'  => $parameters,
 					'executor'    => 'client',
@@ -139,7 +140,7 @@ final class OpenclaWP_Tools_Resolver {
 					$parameters
 				);
 
-				$name_to_abil[ $declared_name ] = $ability_name;
+				$name_to_abil[ $loop_name ] = $ability_name;
 			}
 		}
 
@@ -168,6 +169,7 @@ final class OpenclaWP_Tools_Resolver {
 				}
 
 				$declared_name = self::sanitize_name( 'delegate-to-' . $subagent_slug );
+				$loop_name     = self::loop_name( $declared_name );
 				$label         = method_exists( $subagent, 'get_label' ) ? (string) $subagent->get_label() : $subagent_slug;
 				$bio           = method_exists( $subagent, 'get_description' ) ? (string) $subagent->get_description() : '';
 				$description   = sprintf(
@@ -176,9 +178,9 @@ final class OpenclaWP_Tools_Resolver {
 					'' === $bio ? '(no description provided)' : $bio
 				);
 
-				$declarations[ $declared_name ] = array(
-					'name'        => $declared_name,
-					'source'      => 'openclawp',
+				$declarations[ $loop_name ] = array(
+					'name'        => $loop_name,
+					'source'      => self::TOOL_SOURCE,
 					'description' => $description,
 					'parameters'  => $delegate_parameters,
 					'executor'    => 'client',
@@ -191,7 +193,7 @@ final class OpenclaWP_Tools_Resolver {
 					$delegate_parameters
 				);
 
-				$delegate_targets[ $declared_name ] = $subagent_slug;
+				$delegate_targets[ $loop_name ] = $subagent_slug;
 			}
 		}
 

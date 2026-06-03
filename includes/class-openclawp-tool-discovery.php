@@ -190,22 +190,24 @@ final class OpenclaWP_Tool_Discovery {
 	public static function meta_tool_resolver_payload( array $catalog_tools = array() ): array {
 		$list_name    = OpenclaWP_Tools_Resolver::sanitize_name( self::LIST_ABILITY );
 		$execute_name = OpenclaWP_Tools_Resolver::sanitize_name( self::EXECUTE_ABILITY );
+		$list_loop    = OpenclaWP_Tools_Resolver::loop_name( $list_name );
+		$execute_loop = OpenclaWP_Tools_Resolver::loop_name( $execute_name );
 
 		$list_params    = self::list_tools_input_schema();
 		$execute_params = self::execute_tool_input_schema();
 
 		$declarations = array(
-			$list_name    => array(
-				'name'        => $list_name,
-				'source'      => 'openclawp',
+			$list_loop    => array(
+				'name'        => $list_loop,
+				'source'      => OpenclaWP_Tools_Resolver::TOOL_SOURCE,
 				'description' => self::list_tools_description(),
 				'parameters'  => $list_params,
 				'executor'    => 'client',
 				'scope'       => 'run',
 			),
-			$execute_name => array(
-				'name'        => $execute_name,
-				'source'      => 'openclawp',
+			$execute_loop => array(
+				'name'        => $execute_loop,
+				'source'      => OpenclaWP_Tools_Resolver::TOOL_SOURCE,
 				'description' => self::execute_tool_description(),
 				'parameters'  => $execute_params,
 				'executor'    => 'client',
@@ -231,8 +233,8 @@ final class OpenclaWP_Tool_Discovery {
 			'declarations'              => $declarations,
 			'declarations_for_provider' => $provider_decls,
 			'name_to_ability'           => array(
-				$list_name    => self::LIST_ABILITY,
-				$execute_name => self::EXECUTE_ABILITY,
+				$list_loop    => self::LIST_ABILITY,
+				$execute_loop => self::EXECUTE_ABILITY,
 			),
 			'catalog_tools'             => array_values( array_filter( array_map( 'strval', $catalog_tools ) ) ),
 		);

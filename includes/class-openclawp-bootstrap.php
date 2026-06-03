@@ -206,7 +206,7 @@ final class OpenclaWP_Bootstrap {
 
 		$missing = array();
 		if ( ! defined( 'AGENTS_API_LOADED' ) ) {
-			$missing[] = '<a href="https://github.com/Automattic/agents-api">automattic/agents-api</a>';
+			$missing[] = '<a href="https://github.com/Automattic/agents-api">wordpress/agents-api</a>';
 		}
 		if ( ! function_exists( 'wp_ai_client_prompt' ) ) {
 			$missing[] = 'WordPress 7.0+ (provides <code>wp_ai_client_prompt()</code>)';

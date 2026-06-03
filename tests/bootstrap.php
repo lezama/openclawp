@@ -189,7 +189,7 @@ if ( ! function_exists( 'esc_url_raw' ) ) {
 require_once __DIR__ . '/../vendor/autoload.php';
 
 // Stub the agents-api channel base class. The real one lives in
-// `automattic/agents-api`, which is a dev-main composer dep that isn't
+// `wordpress/agents-api`, which is a dev-main composer dep that isn't
 // always installed during PHPUnit runs (CI environments, fresh checkouts).
 // Tests in tests/unit/ exercise pure-PHP helpers on the subclasses; the
 // actual loop logic is covered by tests/smoke.php inside a real WP.

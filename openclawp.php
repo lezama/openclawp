@@ -32,7 +32,7 @@ if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
 }
 
 if ( ! defined( 'AGENTS_API_LOADED' ) ) {
-	$openclawp_agents_api_bootstrap = __DIR__ . '/vendor/automattic/agents-api/agents-api.php';
+	$openclawp_agents_api_bootstrap = __DIR__ . '/vendor/wordpress/agents-api/agents-api.php';
 	if ( file_exists( $openclawp_agents_api_bootstrap ) ) {
 		require_once $openclawp_agents_api_bootstrap;
 	}

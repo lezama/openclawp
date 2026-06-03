@@ -26,7 +26,7 @@
 	"tool_catalog": [
 		{
 			"description": "Returns up to 5 most recent published posts (title + permalink + excerpt).",
-			"name": "openclawp__get-recent-posts",
+			"name": "client/openclawp__get-recent-posts",
 			"parameters": {
 				"properties": {
 					"limit": {
@@ -37,31 +37,31 @@
 				},
 				"type": "object"
 			},
-			"source": "openclawp"
+			"source": "client"
 		},
 		{
 			"description": "Returns counts of comments by status (approved, pending, spam, trash).",
-			"name": "openclawp__count-comments",
+			"name": "client/openclawp__count-comments",
 			"parameters": {
 				"type": "object"
 			},
-			"source": "openclawp"
+			"source": "client"
 		},
 		{
 			"description": "Lists currently active plugins on this site (name + version).",
-			"name": "openclawp__get-active-plugins",
+			"name": "client/openclawp__get-active-plugins",
 			"parameters": {
 				"type": "object"
 			},
-			"source": "openclawp"
+			"source": "client"
 		},
 		{
 			"description": "Returns the logged-in WordPress user (id, login, display name, roles).",
-			"name": "openclawp__get-current-user",
+			"name": "client/openclawp__get-current-user",
 			"parameters": {
 				"type": "object"
 			},
-			"source": "openclawp"
+			"source": "client"
 		}
 	]
 }
