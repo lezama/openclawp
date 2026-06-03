@@ -71,6 +71,8 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Agency_Rest::register();
 		OpenclaWP_Decisions_Rest::register();
 		OpenclaWP_Agenttic_Bridge::register();
+		OpenclaWP_Agent_Card::register();
+		OpenclaWP_A2a_Client_Bridge::register();
 		OpenclaWP_Canonical_Chat_Handler::register();
 		OpenclaWP_Workflow_Bootstrap::register();
 		OpenclaWP_Routines_Rest::register();

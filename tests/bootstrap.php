@@ -107,9 +107,40 @@ if ( ! function_exists( 'wp_remote_post' ) ) {
 		);
 	}
 }
+if ( ! function_exists( 'wp_remote_get' ) ) {
+	function wp_remote_get( string $url, array $args = array() ) {
+		$GLOBALS['openclawp_test_http_get_capture'][] = array(
+			'url'  => $url,
+			'args' => $args,
+		);
+		if ( isset( $GLOBALS['openclawp_test_http_get_response'] ) ) {
+			return $GLOBALS['openclawp_test_http_get_response'];
+		}
+		return array(
+			'response' => array( 'code' => 200, 'message' => 'OK' ),
+			'body'     => '',
+		);
+	}
+}
 if ( ! function_exists( 'wp_remote_retrieve_response_code' ) ) {
 	function wp_remote_retrieve_response_code( $response ): int {
 		return (int) ( $response['response']['code'] ?? 0 );
+	}
+}
+if ( ! function_exists( 'home_url' ) ) {
+	function home_url( string $path = '' ): string {
+		return 'https://openclawp.test' . $path;
+	}
+}
+if ( ! function_exists( 'wp_generate_password' ) ) {
+	function wp_generate_password( int $length = 12, bool $special_chars = true, bool $extra_special_chars = false ): string {
+		unset( $special_chars, $extra_special_chars );
+		return substr( str_repeat( 'abcdef0123456789', 4 ), 0, max( 1, $length ) );
+	}
+}
+if ( ! function_exists( 'wp_generate_uuid4' ) ) {
+	function wp_generate_uuid4(): string {
+		return '00000000-0000-4000-8000-000000000000';
 	}
 }
 if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
@@ -137,6 +168,11 @@ if ( ! function_exists( 'sanitize_text_field' ) ) {
 if ( ! function_exists( 'sanitize_textarea_field' ) ) {
 	function sanitize_textarea_field( string $text ): string {
 		return trim( preg_replace( '/[\r\t ]+/', ' ', strip_tags( $text ) ) ?? '' );
+	}
+}
+if ( ! function_exists( 'wp_parse_url' ) ) {
+	function wp_parse_url( string $url, int $component = -1 ) {
+		return parse_url( $url, $component );
 	}
 }
 if ( ! function_exists( 'wp_http_validate_url' ) ) {

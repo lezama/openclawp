@@ -1199,6 +1199,89 @@ if ( class_exists( 'OpenclaWP_External_Whatsapp' ) ) {
 	);
 }
 
+// ---------------------------------------------------------------------------
+// A2A agent mesh: agent card (discovery) + A2A peer client bridge.
+// ---------------------------------------------------------------------------
+if ( class_exists( 'OpenclaWP_Agent_Card' ) && function_exists( 'wp_register_agent' ) ) {
+	OpenclaWP_Smoke::register_agent(
+		'openclawp-smoke-card',
+		array(
+			'label'          => 'openclaWP Smoke Card',
+			'description'    => 'Agent used by the smoke test to exercise the A2A card.',
+			'owner_resolver' => static fn(): int => get_current_user_id(),
+			'default_config' => array(
+				'provider' => 'auto',
+				'model'    => 'claude-haiku-4-5',
+				'tools'    => array( 'openclawp/get-recent-posts' ),
+			),
+		)
+	);
+
+	$card_route = rest_url( 'openclawp/v1/agenttic/openclawp-smoke-card/.well-known/agent-card.json' );
+
+	// Gated by default: an unauthenticated fetch must be refused (the card
+	// exposes the system prompt + tool inventory, so it mirrors the bridge's
+	// manage_options gate).
+	$card_gated = wp_remote_get( $card_route, array( 'timeout' => 15 ) );
+	OpenclaWP_Smoke::check(
+		'agent card is gated for unauthenticated callers',
+		! is_wp_error( $card_gated ) && in_array( (int) wp_remote_retrieve_response_code( $card_gated ), array( 401, 403 ), true )
+	);
+
+	// Opt into public discovery via the filter, then fetch + assert the shape.
+	$open_card = static fn (): bool => true;
+	add_filter( 'openclawp_agent_card_permission', $open_card );
+	$card_resp = wp_remote_get( $card_route, array( 'timeout' => 15 ) );
+	remove_filter( 'openclawp_agent_card_permission', $open_card );
+
+	$card_code = is_wp_error( $card_resp ) ? 0 : (int) wp_remote_retrieve_response_code( $card_resp );
+	$card_body = is_wp_error( $card_resp ) ? array() : (array) json_decode( (string) wp_remote_retrieve_body( $card_resp ), true );
+
+	OpenclaWP_Smoke::check(
+		'agent card served with 200 when discovery is opened via filter',
+		200 === $card_code
+	);
+	OpenclaWP_Smoke::check(
+		'agent card advertises name + JSONRPC transport + streaming',
+		'openclaWP Smoke Card' === ( $card_body['name'] ?? '' )
+			&& 'JSONRPC' === ( $card_body['preferredTransport'] ?? '' )
+			&& true === ( $card_body['capabilities']['streaming'] ?? false )
+	);
+	OpenclaWP_Smoke::check(
+		'agent card derives a skill from the configured tool',
+		in_array( 'openclawp/get-recent-posts', array_column( (array) ( $card_body['skills'] ?? array() ), 'id' ), true )
+	);
+
+	add_filter( 'openclawp_agent_card_permission', $open_card );
+	$card_404 = wp_remote_get(
+		rest_url( 'openclawp/v1/agenttic/no-such-agent-xyz/.well-known/agent-card.json' ),
+		array( 'timeout' => 15 )
+	);
+	remove_filter( 'openclawp_agent_card_permission', $open_card );
+	OpenclaWP_Smoke::check(
+		'agent card returns 404 for an unregistered agent',
+		! is_wp_error( $card_404 ) && 404 === (int) wp_remote_retrieve_response_code( $card_404 )
+	);
+}
+
+if ( class_exists( 'OpenclaWP_A2a_Client_Bridge' ) && function_exists( 'wp_register_ability' ) ) {
+	$peer_filter = static function ( $peers ) {
+		$peers['smoke-peer'] = array(
+			'label'    => 'Smoke Peer',
+			'endpoint' => 'https://peer.invalid/wp-json/openclawp/v1/agenttic/openclawp-example',
+		);
+		return $peers;
+	};
+	add_filter( 'openclawp_a2a_peers', $peer_filter );
+	OpenclaWP_A2a_Client_Bridge::register_bridged_abilities();
+	remove_filter( 'openclawp_a2a_peers', $peer_filter );
+
+	OpenclaWP_Smoke::check(
+		'A2A peer registers as an a2a/<slug> ability',
+		function_exists( 'wp_has_ability' ) && wp_has_ability( 'a2a/smoke-peer' )
+	);
+}
+
 $failed = OpenclaWP_Smoke::summarize();
 if ( $failed > 0 ) {
 	exit( 1 );
