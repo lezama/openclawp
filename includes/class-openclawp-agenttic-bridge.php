@@ -169,14 +169,20 @@ final class OpenclaWP_Agenttic_Bridge {
 		$session_id = isset( $params['sessionId'] ) && is_string( $params['sessionId'] ) ? $params['sessionId'] : null;
 		$task_id    = isset( $params['id'] ) && is_string( $params['id'] ) ? $params['id'] : self::generate_task_id();
 
+		// Agenttic sends dynamic client context as a data part on the message.
+		// Preserve it as canonical agents/chat client_context so runtimes can
+		// expose it to model prompts and tool policies.
+		$client_context = self::client_context_from_message( $message );
+
 		// When the request carries agents-api caller-chain headers, this is an
 		// agent-to-agent delegation. Parse them fail-closed (malformed headers
 		// are a hard error, matching the substrate's request-edge contract) and
 		// tag the turn so `agents/chat` records it as a peer-agent call (#180).
-		$client_context = self::peer_client_context( $request );
-		if ( is_wp_error( $client_context ) ) {
-			return self::error_response( $rpc_id, self::INVALID_PARAMS, $client_context->get_error_message() );
+		$peer_context = self::peer_client_context( $request );
+		if ( is_wp_error( $peer_context ) ) {
+			return self::error_response( $rpc_id, self::INVALID_PARAMS, $peer_context->get_error_message() );
 		}
+		$client_context = self::merge_client_context( $client_context, $peer_context );
 
 		if ( ! function_exists( 'wp_get_ability' ) ) {
 			return self::error_response( $rpc_id, self::INTERNAL_ERROR, 'Abilities API is not loaded.' );
@@ -377,6 +383,78 @@ final class OpenclaWP_Agenttic_Bridge {
 			}
 		}
 		return '';
+	}
+
+	/**
+	 * Extract Agenttic's dynamic clientContext data part from an A2A message.
+	 *
+	 * @param array<string,mixed> $message A2A message.
+	 * @return array<string,mixed>
+	 */
+	public static function client_context_from_message( array $message ): array {
+		$parts = isset( $message['parts'] ) && is_array( $message['parts'] ) ? $message['parts'] : array();
+		$context = array();
+
+		foreach ( $parts as $part ) {
+			if ( ! is_array( $part ) || 'data' !== ( $part['type'] ?? '' ) ) {
+				continue;
+			}
+			$data = isset( $part['data'] ) && is_array( $part['data'] ) ? $part['data'] : array();
+			foreach ( array( 'clientContext', 'client_context' ) as $key ) {
+				if ( ! isset( $data[ $key ] ) || ! is_array( $data[ $key ] ) || array_is_list( $data[ $key ] ) ) {
+					continue;
+				}
+				$context = self::merge_client_context( $context, self::string_keyed_context( $data[ $key ] ) );
+			}
+		}
+
+		if ( empty( $context ) ) {
+			return array();
+		}
+
+		return array_merge(
+			array( 'client_name' => 'agenttic-client' ),
+			$context,
+			array( 'source' => 'agenttic' )
+		);
+	}
+
+	/**
+	 * Merge client context maps while preserving later, trusted values.
+	 *
+	 * @param array<string,mixed> ...$contexts Context maps.
+	 * @return array<string,mixed>
+	 */
+	private static function merge_client_context( array ...$contexts ): array {
+		$merged = array();
+		foreach ( $contexts as $context ) {
+			if ( empty( $context ) ) {
+				continue;
+			}
+			$merged = array_replace_recursive( $merged, self::string_keyed_context( $context ) );
+		}
+		return $merged;
+	}
+
+	/**
+	 * Keep only string-keyed object fields recursively.
+	 *
+	 * @param array<mixed> $context Raw context map.
+	 * @return array<string,mixed>
+	 */
+	private static function string_keyed_context( array $context ): array {
+		$out = array();
+		foreach ( $context as $key => $value ) {
+			if ( ! is_string( $key ) || '' === $key ) {
+				continue;
+			}
+			if ( is_array( $value ) && ! array_is_list( $value ) ) {
+				$out[ $key ] = self::string_keyed_context( $value );
+				continue;
+			}
+			$out[ $key ] = $value;
+		}
+		return $out;
 	}
 
 	/**

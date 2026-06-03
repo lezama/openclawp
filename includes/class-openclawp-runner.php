@@ -187,13 +187,16 @@ final class OpenclaWP_Runner {
 			'transcript_session_id' => $session_id,
 			'transcript_lock_ttl'   => 300,
 		);
+		$loop_context = self::tool_context_from_runtime_context( $runtime_context );
+		if ( ! empty( $loop_context['client_context'] ) || count( $loop_context ) > 1 ) {
+			$loop_options['context'] = $loop_context;
+		}
 		if ( null !== $tool_executor ) {
 			// Canonical's loop defaults `should_continue` to continue-always when
 			// `tool_executor` + `tool_declarations` are both present (agents-api
 			// PR #97), so we don't need to override it.
 			$loop_options['tool_executor']     = $tool_executor;
 			$loop_options['tool_declarations'] = $tools['declarations'];
-			$loop_options['context']           = self::tool_context_from_runtime_context( $runtime_context );
 		}
 
 		$result = WP_Agent_Conversation_Loop::run( $messages, $turn_runner, $loop_options );
@@ -309,6 +312,95 @@ final class OpenclaWP_Runner {
 	}
 
 	/**
+	 * Add an ephemeral model-visible client context block to the latest user turn.
+	 *
+	 * Agenttic's `contextProvider` sends dynamic per-turn context outside the
+	 * text part. The runner keeps that context out of the stored transcript, but
+	 * injects it into the provider prompt so an agent can follow instructions like
+	 * "if clientContext.foo is present, use it".
+	 *
+	 * @param array<int,array<string,mixed>> $messages Current transcript.
+	 * @param array<string,mixed>            $turn_context Loop turn context.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function messages_with_client_context( array $messages, array $turn_context ): array {
+		$client_context = isset( $turn_context['client_context'] ) && is_array( $turn_context['client_context'] )
+			? $turn_context['client_context']
+			: array();
+		if ( empty( $client_context ) ) {
+			return $messages;
+		}
+
+		$block = self::client_context_prompt_block( $client_context, $turn_context );
+		if ( '' === $block ) {
+			return $messages;
+		}
+
+		for ( $i = count( $messages ) - 1; $i >= 0; --$i ) {
+			if ( 'user' !== ( $messages[ $i ]['role'] ?? '' ) ) {
+				continue;
+			}
+
+			$content = $messages[ $i ]['content'] ?? '';
+			if ( is_string( $content ) ) {
+				$messages[ $i ]['content'] = rtrim( $content ) . "\n\n" . $block;
+				return $messages;
+			}
+
+			if ( is_array( $content ) ) {
+				$content[] = array(
+					'type' => 'text',
+					'text' => $block,
+				);
+				$messages[ $i ]['content'] = $content;
+				return $messages;
+			}
+		}
+
+		return $messages;
+	}
+
+	/**
+	 * Build a compact, filterable prompt block for dynamic client context.
+	 *
+	 * @param array<string,mixed> $client_context Raw client context.
+	 * @param array<string,mixed> $turn_context Loop turn context.
+	 * @return string
+	 */
+	private static function client_context_prompt_block( array $client_context, array $turn_context ): string {
+		/**
+		 * Filters dynamic client context before it is exposed to the model.
+		 *
+		 * Return an empty array to hide client context from the model.
+		 *
+		 * @param array<string,mixed> $client_context Client context for this turn.
+		 * @param array<string,mixed> $turn_context Loop turn context.
+		 */
+		$client_context = (array) apply_filters( 'openclawp_model_client_context', $client_context, $turn_context );
+		if ( empty( $client_context ) ) {
+			return '';
+		}
+
+		$json = wp_json_encode( $client_context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( ! is_string( $json ) || '' === $json ) {
+			return '';
+		}
+
+		$block = "[Client context for this turn]\nclientContext=" . $json . "\n[/Client context]";
+
+		/**
+		 * Filters the rendered client-context prompt block.
+		 *
+		 * @param string              $block Client-context prompt block.
+		 * @param array<string,mixed> $client_context Client context for this turn.
+		 * @param array<string,mixed> $turn_context Loop turn context.
+		 */
+		$block = (string) apply_filters( 'openclawp_model_client_context_block', $block, $client_context, $turn_context );
+
+		return trim( $block );
+	}
+
+	/**
 	 * Build the closure passed to the loop. Filterable so adopters can swap
 	 * providers (e.g. Menta-flavored Gemini-OAuth) without touching this file.
 	 *
@@ -346,7 +438,8 @@ final class OpenclaWP_Runner {
 					);
 				}
 
-				$ai_messages = OpenclaWP_Message_Adapter::to_ai_client_messages( $messages );
+				$messages_for_model = self::messages_with_client_context( $messages, $context );
+				$ai_messages         = OpenclaWP_Message_Adapter::to_ai_client_messages( $messages_for_model );
 
 				$builder = wp_ai_client_prompt( $ai_messages );
 				if ( $mediation_enabled ) {
