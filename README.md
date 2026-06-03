@@ -126,6 +126,15 @@ studio --path "$SITE_PATH" wp option update \
 	connectors_ai_anthropic_api_key "$ANTHROPIC_API_KEY"
 ```
 
+> **Cost note.** The bundled demo agents use `model: auto`, so the active
+> provider picks the model — which on a cloud provider is its *default*, often
+> the priciest (e.g. Opus). To control spend, set each agent's
+> `default_config['model']` to a specific id the provider exposes (e.g. a dated
+> Anthropic Haiku id). If a configured model id doesn't resolve, wp-ai-client
+> silently falls back to the provider default; openclaWP logs that substitution
+> as `[openclawp] model_substitution …` so you can catch it. Pair with the
+> per-site budget caps (`budget_daily_usd`, `budget_daily_turns`).
+
 ### Path B — an existing WordPress site
 
 If a site already exists (Pressable, a VPS, [Local](https://localwp.com/), your own Docker, …), drop the plugins in. Anthropic shown to keep the block short — the Ollama recipe in Path A applies verbatim, just call `wp` instead of `studio --path … wp`.

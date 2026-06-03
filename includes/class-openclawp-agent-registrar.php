@@ -53,7 +53,7 @@ final class OpenclaWP_Agent_Registrar {
 				'owner_resolver' => static fn(): int => get_current_user_id(),
 				'default_config' => array(
 					'provider'  => 'auto',
-					'model'     => 'claude-haiku-4-5',
+					'model'     => 'auto',
 					'tools'     => array(
 						'openclawp/get-recent-posts',
 						'openclawp/count-comments',
@@ -93,7 +93,7 @@ final class OpenclaWP_Agent_Registrar {
 				'owner_resolver' => static fn(): int => get_current_user_id(),
 				'default_config' => array(
 					'provider'  => 'auto',
-					'model'     => 'claude-haiku-4-5',
+					'model'     => 'auto',
 					'tools'     => array( 'openclawp/get-time' ),
 					'max_turns' => 5,
 				),
@@ -131,7 +131,7 @@ final class OpenclaWP_Agent_Registrar {
 				'owner_resolver' => static fn(): int => get_current_user_id(),
 				'default_config' => array(
 					'provider' => 'auto',
-					'model'    => 'claude-haiku-4-5',
+					'model'    => 'auto',
 				),
 				'meta'           => array(
 					'source_plugin'  => 'openclawp/openclawp.php',
@@ -177,7 +177,7 @@ final class OpenclaWP_Agent_Registrar {
 				'owner_resolver' => static fn(): int => get_current_user_id(),
 				'default_config' => array(
 					'provider' => 'auto',
-					'model'    => 'claude-haiku-4-5',
+					'model'    => 'auto',
 				),
 				'meta'           => array(
 					'source_plugin'  => 'openclawp/openclawp.php',
@@ -305,7 +305,7 @@ PROMPT;
 				'owner_resolver' => static fn(): int => get_current_user_id(),
 				'default_config' => array(
 					'provider'  => 'auto',
-					'model'     => 'claude-haiku-4-5',
+					'model'     => 'auto',
 					'max_turns' => 6,
 				),
 				'subagents'      => array(
