@@ -148,7 +148,11 @@ final class OpenclaWP_Runner {
 			'content' => $message_for_model,
 		);
 
-		$tools = OpenclaWP_Tools_Resolver::for_agent( $agent );
+		// loop_tools() (not for_agent()) re-keys declarations + executor maps under
+		// the `client/<name>` form the agents-api conversation loop validates and
+		// matches tool calls against. for_agent()'s unprefixed output still backs
+		// the MCP tool surface and the provider-facing function names.
+		$tools = OpenclaWP_Tools_Resolver::loop_tools( $agent );
 		// Stamp identity onto the runtime context so the executor can
 		// resolve user/session/agent without an extra round-trip back into
 		// the runner. Used by the confirmation gate (#40) to look up
@@ -577,8 +581,12 @@ final class OpenclaWP_Runner {
 				continue;
 			}
 
+			// The model returns the provider-safe function name (no slash). Map it
+			// to the loop-facing `client/<name>` form so the conversation loop's
+			// mediation matches it against the tool declarations and the executor's
+			// name map (both keyed on the loop name). {@see OpenclaWP_Tools_Resolver::loop_name()}.
 			$out[] = array(
-				'name'       => $name,
+				'name'       => OpenclaWP_Tools_Resolver::loop_name( $name ),
 				'parameters' => is_array( $args ) ? $args : array(),
 			);
 		}

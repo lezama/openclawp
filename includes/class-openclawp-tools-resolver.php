@@ -31,6 +31,44 @@ defined( 'ABSPATH' ) || exit;
 final class OpenclaWP_Tools_Resolver {
 
 	/**
+	 * Source segment for client tool declarations. The agents-api conversation
+	 * loop validates client tool names against `^client/[a-z][a-z0-9_-]*$` and
+	 * derives the declaration's source from the segment before the slash, which
+	 * MUST equal `client` (see WP_Agent_Tool_Declaration::validate()). Provider
+	 * APIs reject `/` in function names, so the name the model sees stays the
+	 * sanitized `__` form; the loop-facing declaration + executor key it as
+	 * `client/<sanitized>`. {@see self::loop_name()}.
+	 */
+	public const TOOL_SOURCE = 'client';
+
+	/**
+	 * Map a provider-safe declaration name (what the model sees, e.g.
+	 * `openclawp__get-recent-posts`) to the loop-facing name the agents-api
+	 * conversation loop validates and matches tool calls against
+	 * (`client/openclawp__get-recent-posts`). Idempotent.
+	 */
+	public static function loop_name( string $declared_name ): string {
+		$prefix = self::TOOL_SOURCE . '/';
+		if ( 0 === strpos( $declared_name, $prefix ) ) {
+			return $declared_name;
+		}
+		return $prefix . $declared_name;
+	}
+
+	/**
+	 * Inverse of {@see self::loop_name()}: strip the `client/` prefix off a
+	 * loop-facing tool name to recover the provider-safe name the model used
+	 * (and expects back in FunctionCall / FunctionResponse parts). Idempotent.
+	 */
+	public static function provider_name( string $loop_name ): string {
+		$prefix = self::TOOL_SOURCE . '/';
+		if ( 0 === strpos( $loop_name, $prefix ) ) {
+			return substr( $loop_name, strlen( $prefix ) );
+		}
+		return $loop_name;
+	}
+
+	/**
 	 * @return array{
 	 *     declarations: array<string, array{name:string,source:string,description:string,parameters:array,executor:string,scope:string}>,
 	 *     declarations_for_provider: array,
@@ -166,12 +204,62 @@ final class OpenclaWP_Tools_Resolver {
 	}
 
 	/**
+	 * Build the loop-facing variant of {@see self::for_agent()} for the
+	 * agents-api conversation loop.
+	 *
+	 * The loop validates client tool declarations as `client/<name>` (deriving
+	 * source `client` from the segment before the slash) and matches the model's
+	 * tool calls against those same names. So this re-keys the declarations and
+	 * the executor maps under {@see self::loop_name()} and stamps the
+	 * source/executor/scope the loop requires. The provider-facing declarations
+	 * and the raw {@see self::for_agent()} output are intentionally left
+	 * unprefixed — the MCP tool surface and the names the model sees must NOT
+	 * carry the `client/` prefix. The runner maps the model's returned tool-call
+	 * names back through {@see self::loop_name()}.
+	 *
+	 * @return array{declarations:array<string,array<string,mixed>>,declarations_for_provider:array,name_to_ability:array<string,string>,delegate_targets:array<string,string>}
+	 */
+	public static function loop_tools( WP_Agent $agent ): array {
+		$resolved = self::for_agent( $agent );
+
+		$declarations = array();
+		foreach ( $resolved['declarations'] as $name => $decl ) {
+			$loop             = self::loop_name( (string) $name );
+			$decl['name']     = $loop;
+			$decl['source']   = self::TOOL_SOURCE;
+			$decl['executor'] = 'client';
+			$decl['scope']    = 'run';
+
+			$declarations[ $loop ] = $decl;
+		}
+
+		$name_to_ability = array();
+		foreach ( $resolved['name_to_ability'] as $name => $ability ) {
+			$name_to_ability[ self::loop_name( (string) $name ) ] = $ability;
+		}
+
+		$delegate_targets = array();
+		foreach ( ( $resolved['delegate_targets'] ?? array() ) as $name => $slug ) {
+			$delegate_targets[ self::loop_name( (string) $name ) ] = $slug;
+		}
+
+		return array(
+			'declarations'              => $declarations,
+			'declarations_for_provider' => $resolved['declarations_for_provider'],
+			'name_to_ability'           => $name_to_ability,
+			'delegate_targets'          => $delegate_targets,
+		);
+	}
+
+	/**
 	 * Convert a `namespace/slug` ability name into a provider-safe function
-	 * name. `/` becomes `__`; other unsupported characters get stripped.
+	 * name. `/` becomes `__`; other unsupported characters get stripped; the
+	 * result is lowercased so the `client/<name>` loop form satisfies the
+	 * agents-api client-tool name pattern (`^[a-z][a-z0-9_-]*$` per segment).
 	 */
 	public static function sanitize_name( string $ability_name ): string {
-		$sanitized = str_replace( '/', '__', $ability_name );
-		$sanitized = preg_replace( '/[^A-Za-z0-9_-]/', '', $sanitized );
+		$sanitized = str_replace( '/', '__', strtolower( $ability_name ) );
+		$sanitized = preg_replace( '/[^a-z0-9_-]/', '', $sanitized );
 		return is_string( $sanitized ) ? $sanitized : '';
 	}
 }
