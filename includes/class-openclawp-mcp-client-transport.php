@@ -30,8 +30,9 @@ defined( 'ABSPATH' ) || exit;
 
 final class OpenclaWP_Mcp_Client_Transport {
 
-	private const PROTOCOL_VERSION     = '2025-06-18';
-	private const READ_TIMEOUT_SECONDS = 15;
+	private const PROTOCOL_VERSION               = '2025-06-18';
+	private const READ_TIMEOUT_SECONDS           = 15;
+	private const EXECUTION_LIMIT_BUFFER_SECONDS = 5;
 
 	/**
 	 * Probe a configured server: initialize + tools/list. Returns the tool
@@ -159,7 +160,7 @@ final class OpenclaWP_Mcp_Client_Transport {
 
 	/**
 	 * @param array<string,mixed> $config
-	 * @return array{process:resource, pipes:array<int,resource>, id:int}|\WP_Error
+	 * @return array{process:resource, pipes:array<int,resource>, id:int, deadline:?float}|\WP_Error
 	 */
 	private static function open_stdio_session( array $config ) {
 		$command = (string) ( $config['command'] ?? '' );
@@ -194,14 +195,15 @@ final class OpenclaWP_Mcp_Client_Transport {
 		stream_set_blocking( $pipes[2], false );
 
 		return array(
-			'process' => $process,
-			'pipes'   => $pipes,
-			'id'      => 0,
+			'process'  => $process,
+			'pipes'    => $pipes,
+			'id'       => 0,
+			'deadline' => self::request_execution_deadline(),
 		);
 	}
 
 	/**
-	 * @param array{process:resource, pipes:array<int,resource>, id:int} $session
+	 * @param array{process:resource, pipes:array<int,resource>, id:int, deadline:?float} $session
 	 */
 	private static function close_stdio_session( array $session ): void {
 		foreach ( $session['pipes'] as $pipe ) {
@@ -218,7 +220,7 @@ final class OpenclaWP_Mcp_Client_Transport {
 	/**
 	 * Send a JSON-RPC request frame and block for the matching response.
 	 *
-	 * @param array{process:resource, pipes:array<int,resource>, id:int} $session
+	 * @param array{process:resource, pipes:array<int,resource>, id:int, deadline:?float} $session
 	 *
 	 * @return mixed|\WP_Error
 	 */
@@ -237,8 +239,12 @@ final class OpenclaWP_Mcp_Client_Transport {
 			return new \WP_Error( 'mcp_client_write_failed', sprintf( 'write to stdin failed for %s', $method ) );
 		}
 
-		$deadline = microtime( true ) + self::READ_TIMEOUT_SECONDS;
-		$buffer   = '';
+		$started_at = microtime( true );
+		$deadline   = $started_at + self::READ_TIMEOUT_SECONDS;
+		if ( isset( $session['deadline'] ) && is_float( $session['deadline'] ) ) {
+			$deadline = min( $deadline, $session['deadline'] );
+		}
+		$buffer = '';
 
 		while ( microtime( true ) < $deadline ) {
 			$chunk = @fgets( $session['pipes'][1] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
@@ -252,7 +258,8 @@ final class OpenclaWP_Mcp_Client_Transport {
 						sprintf( 'process exited (code %d) before %s response: %s', (int) $status['exitcode'], $method, is_string( $stderr ) ? trim( $stderr ) : '' )
 					);
 				}
-				usleep( 50000 ); // 50ms
+				$remaining_usec = (int) max( 1000, min( 50000, ( $deadline - microtime( true ) ) * 1000000 ) );
+				usleep( $remaining_usec );
 				continue;
 			}
 
@@ -284,16 +291,17 @@ final class OpenclaWP_Mcp_Client_Transport {
 			return $decoded['result'] ?? array();
 		}
 
+		$elapsed = max( 0.0, microtime( true ) - $started_at );
 		return new \WP_Error(
 			'mcp_client_timeout',
-			sprintf( 'timed out waiting for %s response after %ds', $method, self::READ_TIMEOUT_SECONDS )
+			sprintf( 'timed out waiting for %s response after %.1fs', $method, $elapsed )
 		);
 	}
 
 	/**
 	 * Fire-and-forget JSON-RPC notification (no id, no response expected).
 	 *
-	 * @param array{process:resource, pipes:array<int,resource>, id:int} $session
+	 * @param array{process:resource, pipes:array<int,resource>, id:int, deadline:?float} $session
 	 */
 	private static function notify_stdio( array $session, string $method, $params ): void {
 		$payload = wp_json_encode(
@@ -304,6 +312,28 @@ final class OpenclaWP_Mcp_Client_Transport {
 			)
 		) . "\n";
 		@fwrite( $session['pipes'][0], $payload ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+	}
+
+	/**
+	 * Estimate a request-local deadline that leaves time for PHP to unwind.
+	 *
+	 * A stdio operation can make more than one JSON-RPC request in sequence
+	 * (initialize, then tools/list or tools/call). Keeping only a per-read
+	 * timeout risks colliding with the host's max_execution_time before the
+	 * transport can return a WP_Error.
+	 *
+	 * @return float|null Unix timestamp with microseconds, or null when PHP has no execution limit.
+	 */
+	private static function request_execution_deadline(): ?float {
+		$limit = (int) ini_get( 'max_execution_time' );
+		if ( $limit <= 0 ) {
+			return null;
+		}
+
+		$started_at = isset( $_SERVER['REQUEST_TIME_FLOAT'] ) ? (float) $_SERVER['REQUEST_TIME_FLOAT'] : microtime( true ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated
+		$deadline   = $started_at + max( 1, $limit - self::EXECUTION_LIMIT_BUFFER_SECONDS );
+
+		return max( microtime( true ) + 1, $deadline );
 	}
 
 	// -------------------------------------------------------------------
