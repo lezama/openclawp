@@ -1282,6 +1282,56 @@ if ( class_exists( 'OpenclaWP_A2a_Client_Bridge' ) && function_exists( 'wp_regis
 	);
 }
 
+// ---------------------------------------------------------------------------
+// Tool-mediation round-trip: a tool_call / tool_result pair must convert into
+// native FunctionCall / FunctionResponse message parts (provider name, no
+// `client/` loop prefix). Regression guard for the loop that re-issued the same
+// tool call every turn because the result never reached the model.
+// ---------------------------------------------------------------------------
+if ( class_exists( '\\WordPress\\AiClient\\Messages\\DTO\\Message' ) ) {
+	$transcript = array(
+		array( 'type' => 'text', 'role' => 'user', 'content' => 'latest post?' ),
+		array(
+			'type'     => 'tool_call',
+			'role'     => 'assistant',
+			'content'  => '',
+			'payload'  => array( 'tool_name' => 'client/openclawp__get-recent-posts', 'parameters' => array( 'limit' => 1 ) ),
+			'metadata' => array( 'tool_call_id' => 'tc-1' ),
+		),
+		array(
+			'type'     => 'tool_result',
+			'role'     => 'user',
+			'content'  => '{"posts":[]}',
+			'payload'  => array( 'result' => array( 'posts' => array() ), 'tool_name' => 'client/openclawp__get-recent-posts' ),
+			'metadata' => array( 'tool_call_id' => 'tc-1' ),
+		),
+	);
+
+	$converted    = OpenclaWP_Message_Adapter::to_ai_client_messages( $transcript );
+	$part_type    = static function ( $part ): string {
+		$type = $part->getType();
+		return is_object( $type ) && method_exists( $type, 'value' ) ? (string) $type->value() : (string) $type;
+	};
+	$call_name    = '';
+	$has_response = false;
+	if ( count( $converted ) >= 3 ) {
+		foreach ( $converted[1]->getParts() as $part ) {
+			if ( 'function_call' === $part_type( $part ) && method_exists( $part, 'getFunctionCall' ) ) {
+				$call_name = (string) $part->getFunctionCall()->getName();
+			}
+		}
+		foreach ( $converted[2]->getParts() as $part ) {
+			if ( 'function_response' === $part_type( $part ) ) {
+				$has_response = true;
+			}
+		}
+	}
+
+	OpenclaWP_Smoke::check( 'adapter converts tool round-trip into 3 messages', 3 === count( $converted ) );
+	OpenclaWP_Smoke::check( 'tool_call becomes a FunctionCall with the provider name (client/ prefix stripped)', 'openclawp__get-recent-posts' === $call_name );
+	OpenclaWP_Smoke::check( 'tool_result becomes a FunctionResponse part', true === $has_response );
+}
+
 $failed = OpenclaWP_Smoke::summarize();
 if ( $failed > 0 ) {
 	exit( 1 );
