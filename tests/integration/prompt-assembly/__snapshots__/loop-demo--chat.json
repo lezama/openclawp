@@ -9,9 +9,7 @@
 			"role": "user"
 		}
 	],
-	"model_preference": {
-		"model": "claude-haiku-4-5"
-	},
+	"model_preference": null,
 	"runtime_context": {
 		"client_context": {
 			"client_name": "chat-block",

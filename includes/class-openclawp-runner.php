@@ -368,6 +368,17 @@ final class OpenclaWP_Runner {
 				if ( null !== $preference ) {
 					$builder = $builder->using_model_preference( $preference );
 				}
+				// The model id the agent asked for (empty when 'auto'/unset). Used
+				// below to flag silent provider substitution — wp-ai-client falls
+				// back to the provider's default model (often the priciest) when the
+				// requested id isn't one the active provider exposes, rather than
+				// erroring, which has surprised installs with unexpected billing.
+				$requested_model_id = '';
+				if ( is_array( $preference ) ) {
+					$requested_model_id = (string) ( $preference[1] ?? '' );
+				} elseif ( is_string( $preference ) ) {
+					$requested_model_id = $preference;
+				}
 
 				$start_us  = microtime( true );
 				$generated = $builder->generate_text_result();
@@ -389,6 +400,25 @@ final class OpenclaWP_Runner {
 				$telemetry['provider']    = self::extract_provider_id( $generated );
 				$telemetry['model']       = self::extract_model_id( $generated );
 				$telemetry['token_usage'] = self::extract_token_usage( $generated );
+
+				// Surface silent model substitution: the agent asked for one model
+				// but the provider answered with another (its default fallback). This
+				// is otherwise invisible and can mean paying for a premium model
+				// (e.g. an unrecognised id resolving to Opus). Record it on the turn
+				// telemetry and warn once per turn.
+				$used_model = (string) $telemetry['model'];
+				if ( '' !== $requested_model_id && '' !== $used_model && $requested_model_id !== $used_model ) {
+					$telemetry['model_requested'] = $requested_model_id;
+					// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Matches openclaWP's telemetry channel (grep error_log for [openclawp]).
+					error_log(
+						sprintf(
+							'[openclawp] model_substitution agent=%s requested=%s used=%s — the configured model id did not resolve on the active provider and silently fell back. Pin a model id the provider exposes to control cost.',
+							(string) $agent_obj->get_slug(),
+							$requested_model_id,
+							$used_model
+						)
+					);
+				}
 
 				$tool_calls = self::extract_tool_calls( $generated );
 				$telemetry['tool_call_count'] = count( $tool_calls );
