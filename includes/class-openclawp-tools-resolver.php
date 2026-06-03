@@ -31,6 +31,44 @@ defined( 'ABSPATH' ) || exit;
 final class OpenclaWP_Tools_Resolver {
 
 	/**
+	 * Source segment for client tool declarations. The agents-api conversation
+	 * loop validates client tool names against `^client/[a-z][a-z0-9_-]*$` and
+	 * derives the declaration's source from the segment before the slash, which
+	 * MUST equal `client` (see WP_Agent_Tool_Declaration::validate()). Provider
+	 * APIs reject `/` in function names, so the name the model sees stays the
+	 * sanitized `__` form; the loop-facing declaration + executor key it as
+	 * `client/<sanitized>`. {@see self::loop_name()}.
+	 */
+	public const TOOL_SOURCE = 'client';
+
+	/**
+	 * Map a provider-safe declaration name (what the model sees, e.g.
+	 * `openclawp__get-recent-posts`) to the loop-facing name the agents-api
+	 * conversation loop validates and matches tool calls against
+	 * (`client/openclawp__get-recent-posts`). Idempotent.
+	 */
+	public static function loop_name( string $declared_name ): string {
+		$prefix = self::TOOL_SOURCE . '/';
+		if ( 0 === strpos( $declared_name, $prefix ) ) {
+			return $declared_name;
+		}
+		return $prefix . $declared_name;
+	}
+
+	/**
+	 * Inverse of {@see self::loop_name()}: strip the `client/` prefix off a
+	 * loop-facing tool name to recover the provider-safe name the model used
+	 * (and expects back in FunctionCall / FunctionResponse parts). Idempotent.
+	 */
+	public static function provider_name( string $loop_name ): string {
+		$prefix = self::TOOL_SOURCE . '/';
+		if ( 0 === strpos( $loop_name, $prefix ) ) {
+			return substr( $loop_name, strlen( $prefix ) );
+		}
+		return $loop_name;
+	}
+
+	/**
 	 * @return array{
 	 *     declarations: array<string, array{name:string,source:string,description:string,parameters:array,executor:string,scope:string}>,
 	 *     declarations_for_provider: array,
@@ -82,13 +120,14 @@ final class OpenclaWP_Tools_Resolver {
 				}
 
 				$declared_name = self::sanitize_name( $ability_name );
+				$loop_name     = self::loop_name( $declared_name );
 				$description   = method_exists( $ability, 'get_description' ) ? (string) $ability->get_description() : '';
 				$input_schema  = method_exists( $ability, 'get_input_schema' ) ? $ability->get_input_schema() : null;
 				$parameters    = is_array( $input_schema ) ? $input_schema : array( 'type' => 'object', 'properties' => array() );
 
-				$declarations[ $declared_name ] = array(
-					'name'        => $declared_name,
-					'source'      => 'openclawp',
+				$declarations[ $loop_name ] = array(
+					'name'        => $loop_name,
+					'source'      => self::TOOL_SOURCE,
 					'description' => $description,
 					'parameters'  => $parameters,
 					'executor'    => 'client',
@@ -101,7 +140,7 @@ final class OpenclaWP_Tools_Resolver {
 					$parameters
 				);
 
-				$name_to_abil[ $declared_name ] = $ability_name;
+				$name_to_abil[ $loop_name ] = $ability_name;
 			}
 		}
 
@@ -130,6 +169,7 @@ final class OpenclaWP_Tools_Resolver {
 				}
 
 				$declared_name = self::sanitize_name( 'delegate-to-' . $subagent_slug );
+				$loop_name     = self::loop_name( $declared_name );
 				$label         = method_exists( $subagent, 'get_label' ) ? (string) $subagent->get_label() : $subagent_slug;
 				$bio           = method_exists( $subagent, 'get_description' ) ? (string) $subagent->get_description() : '';
 				$description   = sprintf(
@@ -138,9 +178,9 @@ final class OpenclaWP_Tools_Resolver {
 					'' === $bio ? '(no description provided)' : $bio
 				);
 
-				$declarations[ $declared_name ] = array(
-					'name'        => $declared_name,
-					'source'      => 'openclawp',
+				$declarations[ $loop_name ] = array(
+					'name'        => $loop_name,
+					'source'      => self::TOOL_SOURCE,
 					'description' => $description,
 					'parameters'  => $delegate_parameters,
 					'executor'    => 'client',
@@ -153,7 +193,7 @@ final class OpenclaWP_Tools_Resolver {
 					$delegate_parameters
 				);
 
-				$delegate_targets[ $declared_name ] = $subagent_slug;
+				$delegate_targets[ $loop_name ] = $subagent_slug;
 			}
 		}
 

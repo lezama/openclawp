@@ -11,7 +11,7 @@ Use this checklist before tagging or publishing a release package.
    main plugin header.
 5. Do not add `Requires Plugins: agents-api` unless `agents-api` is published
    under that exact WordPress.org slug; core can load the Composer dependency
-   itself from `vendor/automattic/agents-api/agents-api.php`.
+   itself from `vendor/wordpress/agents-api/agents-api.php`.
 6. Run `composer update --lock` when dependency constraints change and commit
    the resulting `composer.lock` so `dev-main` dependencies stay pinned.
 7. While WordPress 7.0 is still pre-release, keep the README setup commands
@@ -51,7 +51,7 @@ For the default local model path, also verify a tool-using chat prompt in
    Composer manifests, npm manifests, or release-only tooling files.
 6. Install the generated ZIP on a clean WordPress 7.0+ site with the companion
    `agents-api` plugin inactive, then confirm `AGENTS_API_PLUGIN_FILE` points to
-   `openclawp/vendor/automattic/agents-api/agents-api.php`.
+   `openclawp/vendor/wordpress/agents-api/agents-api.php`.
 7. Confirm `readme.txt` includes dependency, external-services, changelog, and
    upgrade-notice sections.
 

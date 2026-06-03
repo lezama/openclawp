@@ -577,8 +577,12 @@ final class OpenclaWP_Runner {
 				continue;
 			}
 
+			// The model returns the provider-safe function name (no slash). Map it
+			// to the loop-facing `client/<name>` form so the conversation loop's
+			// mediation matches it against the tool declarations and the executor's
+			// name map (both keyed on the loop name). {@see OpenclaWP_Tools_Resolver::loop_name()}.
 			$out[] = array(
-				'name'       => $name,
+				'name'       => OpenclaWP_Tools_Resolver::loop_name( $name ),
 				'parameters' => is_array( $args ) ? $args : array(),
 			);
 		}

@@ -23,11 +23,11 @@
 	"tool_catalog": [
 		{
 			"description": "Returns the current server time in ISO 8601 (UTC). Call this whenever the user asks for the time, the current date, or how long ago something happened.",
-			"name": "openclawp__get-time",
+			"name": "client/openclawp__get-time",
 			"parameters": {
 				"type": "object"
 			},
-			"source": "openclawp"
+			"source": "client"
 		}
 	]
 }

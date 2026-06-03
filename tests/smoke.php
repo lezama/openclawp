@@ -234,8 +234,8 @@ OpenclaWP_Smoke::check( 'catalog agent registered', null !== $catalog_agent );
 if ( $catalog_agent ) {
 	$resolved     = OpenclaWP_Tools_Resolver::for_agent( $catalog_agent );
 	$decl_names   = array_keys( $resolved['declarations'] );
-	$list_name    = OpenclaWP_Tools_Resolver::sanitize_name( OpenclaWP_Tool_Discovery::LIST_ABILITY );
-	$execute_name = OpenclaWP_Tools_Resolver::sanitize_name( OpenclaWP_Tool_Discovery::EXECUTE_ABILITY );
+	$list_name    = OpenclaWP_Tools_Resolver::loop_name( OpenclaWP_Tools_Resolver::sanitize_name( OpenclaWP_Tool_Discovery::LIST_ABILITY ) );
+	$execute_name = OpenclaWP_Tools_Resolver::loop_name( OpenclaWP_Tools_Resolver::sanitize_name( OpenclaWP_Tool_Discovery::EXECUTE_ABILITY ) );
 	OpenclaWP_Smoke::check(
 		'catalog mode resolves to exactly the two meta-tools',
 		2 === count( $decl_names )
@@ -262,8 +262,8 @@ $no_catalog_agent = wp_get_agent( 'openclawp-smoke-no-catalog' );
 if ( $no_catalog_agent ) {
 	$resolved   = OpenclaWP_Tools_Resolver::for_agent( $no_catalog_agent );
 	$decl_names = array_keys( $resolved['declarations'] );
-	$echo_name  = OpenclaWP_Tools_Resolver::sanitize_name( 'openclawp/echo' );
-	$chat_name  = OpenclaWP_Tools_Resolver::sanitize_name( 'openclawp/chat' );
+	$echo_name  = OpenclaWP_Tools_Resolver::loop_name( OpenclaWP_Tools_Resolver::sanitize_name( 'openclawp/echo' ) );
+	$chat_name  = OpenclaWP_Tools_Resolver::loop_name( OpenclaWP_Tools_Resolver::sanitize_name( 'openclawp/chat' ) );
 	OpenclaWP_Smoke::check(
 		'catalog mode off keeps the legacy full tool list',
 		2 === count( $decl_names )

@@ -2,7 +2,7 @@
 /**
  * Minimal stub of `\AgentsAPI\AI\Channels\WP_Agent_Channel` for unit tests.
  *
- * The real implementation lives in `automattic/agents-api`. PHPUnit unit
+ * The real implementation lives in `wordpress/agents-api`. PHPUnit unit
  * tests only exercise pure-PHP helpers on the openclaWP subclasses, so this
  * stub provides just enough surface to let those subclasses load without a
  * real composer dep installed.

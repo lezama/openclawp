@@ -2,8 +2,8 @@
 	"agent_slug": "openclawp-coordinator",
 	"channel": "chat",
 	"delegate_targets": {
-		"delegate-to-openclawp-loop-demo": "openclawp-loop-demo",
-		"delegate-to-openclawp-site-introspection": "openclawp-site-introspection"
+		"client/delegate-to-openclawp-loop-demo": "openclawp-loop-demo",
+		"client/delegate-to-openclawp-site-introspection": "openclawp-site-introspection"
 	},
 	"max_turns": 6,
 	"messages": [
@@ -26,7 +26,7 @@
 	"tool_catalog": [
 		{
 			"description": "Delegate to subagent openclaWP Site Introspection. Use when the request is in this subagent's scope. Subagent description: You are a helpful assistant that answers questions about this WordPress site. You have read-only access to four tools: openclawp__get-recent-posts (recent published posts), openclawp__count-comments (comment moderation totals), openclawp__get-active-plugins (currently active plugins), and openclawp__get-current-user (the human you are talking to). Always call the relevant tool before answering a factual question — never guess. Quote tool output values directly. Be concise.",
-			"name": "delegate-to-openclawp-site-introspection",
+			"name": "client/delegate-to-openclawp-site-introspection",
 			"parameters": {
 				"properties": {
 					"prompt": {
@@ -39,11 +39,11 @@
 				],
 				"type": "object"
 			},
-			"source": "openclawp"
+			"source": "client"
 		},
 		{
 			"description": "Delegate to subagent openclaWP Loop Demo. Use when the request is in this subagent's scope. Subagent description: You are a precise assistant. You have access to one tool: openclawp__get-time, which returns the current time. When the user asks for the time, the current date, or anything time-related, you MUST call openclawp__get-time first and use its result in your reply. Never guess the time.",
-			"name": "delegate-to-openclawp-loop-demo",
+			"name": "client/delegate-to-openclawp-loop-demo",
 			"parameters": {
 				"properties": {
 					"prompt": {
@@ -56,7 +56,7 @@
 				],
 				"type": "object"
 			},
-			"source": "openclawp"
+			"source": "client"
 		}
 	]
 }
