@@ -169,6 +169,15 @@ final class OpenclaWP_Agenttic_Bridge {
 		$session_id = isset( $params['sessionId'] ) && is_string( $params['sessionId'] ) ? $params['sessionId'] : null;
 		$task_id    = isset( $params['id'] ) && is_string( $params['id'] ) ? $params['id'] : self::generate_task_id();
 
+		// When the request carries agents-api caller-chain headers, this is an
+		// agent-to-agent delegation. Parse them fail-closed (malformed headers
+		// are a hard error, matching the substrate's request-edge contract) and
+		// tag the turn so `agents/chat` records it as a peer-agent call (#180).
+		$client_context = self::peer_client_context( $request );
+		if ( is_wp_error( $client_context ) ) {
+			return self::error_response( $rpc_id, self::INVALID_PARAMS, $client_context->get_error_message() );
+		}
+
 		if ( ! function_exists( 'wp_get_ability' ) ) {
 			return self::error_response( $rpc_id, self::INTERNAL_ERROR, 'Abilities API is not loaded.' );
 		}
@@ -185,14 +194,17 @@ final class OpenclaWP_Agenttic_Bridge {
 			$listeners_attached = self::attach_streaming_listeners( $rpc_id, $task_id );
 		}
 
+		$execute_args = array(
+			'agent'      => $agent_slug,
+			'message'    => $text,
+			'session_id' => $session_id,
+		);
+		if ( ! empty( $client_context ) ) {
+			$execute_args['client_context'] = $client_context;
+		}
+
 		try {
-			$result = $chat->execute(
-				array(
-					'agent'      => $agent_slug,
-					'message'    => $text,
-					'session_id' => $session_id,
-				)
-			);
+			$result = $chat->execute( $execute_args );
 		} finally {
 			if ( $listeners_attached ) {
 				self::detach_streaming_listeners();
@@ -401,6 +413,44 @@ final class OpenclaWP_Agenttic_Bridge {
 				'error'   => $err,
 			),
 			200
+		);
+	}
+
+	/**
+	 * Build the `client_context` for an inbound A2A turn.
+	 *
+	 * Returns an empty array for a normal (non-peer) call so the chat ability
+	 * sees no extra context. When agents-api caller-chain headers are present
+	 * and describe a remote caller, returns a `peer-agent` client context
+	 * carrying the caller agent slug and marking the turn as an explicit
+	 * agent-to-agent delegation (#180). Malformed headers fail closed with a
+	 * WP_Error, matching the substrate's request-edge contract (#81).
+	 *
+	 * @param WP_REST_Request $request Inbound request.
+	 *
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function peer_client_context( WP_REST_Request $request ) {
+		if ( ! class_exists( 'WP_Agent_Caller_Context' ) ) {
+			return array();
+		}
+
+		try {
+			$context = WP_Agent_Caller_Context::from_headers( $request );
+		} catch ( \Throwable ) {
+			return new WP_Error( 'openclawp_invalid_caller_context', 'Invalid agent caller-context headers.' );
+		}
+
+		if ( ! $context->is_cross_site() ) {
+			return array();
+		}
+
+		return array(
+			'source'            => 'peer-agent',
+			'caller_agent'      => $context->caller_agent_id,
+			// The caller's own session id isn't carried in caller-chain headers.
+			'caller_session_id' => null,
+			'peer_agent_call'   => true,
 		);
 	}
 

@@ -25,6 +25,7 @@ Built on top of [`Automattic/agents-api`](https://github.com/Automattic/agents-a
 | **Chat block** (`wp:openclawp/chat`) | Drop the agent UI into any post, page, template, or wp-admin screen | ✅ |
 | **Chat ability** (`openclawp/chat`) | Callable from MCP servers, Studio Code skills, WP-CLI, other plugins — no HTTP needed | ✅ |
 | **Canonical dispatcher** (`agents/chat`) | Per [agents-api#100](https://github.com/Automattic/agents-api/issues/100); the runtime-agnostic contract for "chat with an agent" | ✅ |
+| **Agent mesh (A2A)** | Every agent can publish an A2A **agent card** at `…/agenttic/<slug>/.well-known/agent-card.json` (discovery; gated to `manage_options` by default, open it via filter), and any agent can call a remote peer as a tool. Peer calls carry the agents-api caller-chain headers ([#81](https://github.com/Automattic/agents-api/pull/81)) and are tagged `peer-agent` on receipt ([#180](https://github.com/Automattic/agents-api/pull/180)). See [`docs/a2a-studio-proposal.md`](docs/a2a-studio-proposal.md). | ✅ |
 | **REST endpoints** | `POST /openclawp/v1/chat` for browser UIs, `GET /openclawp/v1/chat/{session}` for transcripts | ✅ |
 | **Multi-turn sessions** | Each conversation is a CPT (`openclawp_session`); history follows the user across requests | ✅ |
 | **Tool use** | Agents can call read-only abilities — recent posts, comment counts, active plugins, `who-am-I` — bundled with the example agent | ✅ |
@@ -282,6 +283,24 @@ Full troubleshooting + advanced flags: [`tools/wp-env/README.md`](tools/wp-env/R
 | `openclawp_wacli_skip_self_messages` | Per-request override of the from_me skip in the wacli channel. |
 | `openclawp_wacli_binary_candidates` | Add custom paths to wacli auto-discovery. |
 | `openclawp_channels` | Register additional Channels in the wp-admin Channels list view. |
+| `openclawp_a2a_peers` | Register remote A2A peer agents. Each becomes an `a2a/<slug>` tool any local agent can call. Default `[]`. |
+| `openclawp_a2a_client_permission` | Override the default `manage_options` gate on invoking A2A peer tools. |
+| `openclawp_agent_card_permission` | Who can read an agent card. Default `manage_options` (the card exposes the system prompt + tools); return `true` for public A2A discovery. |
+
+**Wire two sites into a mesh** — on the orchestrator site, point an `a2a/<slug>` tool at a peer's bridge endpoint, then add that tool to an agent:
+
+```php
+add_filter( 'openclawp_a2a_peers', function ( $peers ) {
+    $peers['site-b'] = array(
+        'label'       => 'Client Site B',
+        'endpoint'    => 'https://site-b.test/wp-json/openclawp/v1/agenttic/openclawp-site-introspection',
+        'headers'     => array( 'Authorization' => 'Bearer …' ), // optional
+        'local_agent' => 'openclawp-coordinator',                 // caller-context attribution
+    );
+    return $peers;
+} );
+// Then add 'a2a/site-b' to an agent's default_config['tools'] — the loop calls it like any tool.
+```
 
 `openclawp_chat_turn_completed` fires after every chat turn with provider, model, token usage, and wall duration — grep `error_log` for `[openclawp] chat_turn=…`.
 
@@ -291,7 +310,7 @@ Full troubleshooting + advanced flags: [`tools/wp-env/README.md`](tools/wp-env/R
 
 ```bash
 composer install
-vendor/bin/phpunit                                     # 41 unit tests
+vendor/bin/phpunit                                     # pure-PHP unit tests
 ```
 
 Plus a smoke test that needs a running WP (any of the install paths above):
@@ -311,6 +330,7 @@ End-to-end (REST → ability → `proc_open` → real WhatsApp) is exercised man
 - [`docs/local-ollama.md`](docs/local-ollama.md) — agent runbook for routing chat to a local Gemma via Ollama
 - [`docs/atomic-demo.md`](docs/atomic-demo.md) — WordPress.com Atomic deployment and agency demo runbook
 - [`docs/provider-precedence.md`](docs/provider-precedence.md) — recorded design for per-agent / per-site provider routing
+- [`docs/a2a-studio-proposal.md`](docs/a2a-studio-proposal.md) — design for the agent mesh (A2A cards + peer client) and an A2A version of Studio
 
 ---
 

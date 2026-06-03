@@ -71,6 +71,16 @@ final class OpenclaWP_Message_Adapter {
 			if ( 'assistant' !== ( $message['role'] ?? '' ) ) {
 				continue;
 			}
+			// Skip internal-infrastructure envelopes from agents-api. Tool
+			// calls, tool results, deltas, errors etc. all share role
+			// 'assistant' but carry a typed payload that's NOT user-facing.
+			// Without this filter, an LLM turn that finishes on a tool_call
+			// without a subsequent text reply leaks "Calling <tool_name>"
+			// out to the WhatsApp recipient as if it were the bot's answer.
+			$type = (string) ( $message['type'] ?? 'text' );
+			if ( '' !== $type && 'text' !== $type ) {
+				continue;
+			}
 			$text = self::extract_text( $message['content'] ?? '' );
 			if ( '' !== $text ) {
 				return $text;
