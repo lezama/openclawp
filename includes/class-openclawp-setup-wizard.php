@@ -90,7 +90,8 @@ final class OpenclaWP_Setup_Wizard {
 		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only page check.
 		$current_page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( (string) $_GET['page'] ) ) : '';
-		if ( self::PAGE_SLUG === $current_page ) {
+		$screen       = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! self::should_render_welcome_notice( $current_page, $screen ) ) {
 			return;
 		}
 
@@ -106,6 +107,31 @@ final class OpenclaWP_Setup_Wizard {
 			</p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Decide whether the welcome notice should render for the current admin screen.
+	 *
+	 * @param string $current_page Current `page` query arg, if any.
+	 * @param mixed  $screen       Current admin screen when available.
+	 * @return bool
+	 */
+	private static function should_render_welcome_notice( string $current_page, $screen ): bool {
+		if ( self::PAGE_SLUG === $current_page ) {
+			return false;
+		}
+
+		/**
+		 * Filters whether the first-run setup notice should render.
+		 *
+		 * Consumers with their own focused admin surfaces can return false for
+		 * specific screens while still leaving openclaWP's setup wizard available.
+		 *
+		 * @param bool  $show         Whether to show the setup notice.
+		 * @param string $current_page Current `page` query arg, if any.
+		 * @param mixed $screen       Current admin screen when available.
+		 */
+		return (bool) apply_filters( 'openclawp_show_setup_notice', true, $current_page, $screen );
 	}
 
 	/**
