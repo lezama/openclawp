@@ -69,6 +69,27 @@ final class MessageAdapterTest extends TestCase {
 		$this->assertSame( array( 'ok' => true ), $response->getResponse() );
 	}
 
+	public function test_to_ai_client_messages_replays_empty_tool_parameters_as_object(): void {
+		self::install_ai_client_stubs();
+
+		$output = OpenclaWP_Message_Adapter::to_ai_client_messages(
+			array(
+				array(
+					'type'     => 'tool_call',
+					'payload'  => array(
+						'tool_name'  => 'client/openclawp__current-context',
+						'parameters' => array(),
+					),
+					'metadata' => array( 'tool_call_id' => 'call-empty' ),
+				),
+			)
+		);
+
+		$call = $output[0]->getParts()[0]->getContent();
+		$this->assertInstanceOf( \stdClass::class, $call->getArgs() );
+		$this->assertSame( '{}', json_encode( $call->getArgs() ) );
+	}
+
 	public function test_last_assistant_text_returns_most_recent_assistant_message(): void {
 		$messages = array(
 			array( 'role' => 'user',      'content' => 'q1' ),
@@ -200,9 +221,10 @@ final class MessagePart {
 final class FunctionCall {
 	private ?string $id;
 	private string $name;
-	private array $args;
+	/** @var mixed */
+	private $args;
 
-	public function __construct( ?string $id, string $name, array $args ) {
+	public function __construct( ?string $id, string $name, $args ) {
 		$this->id   = $id;
 		$this->name = $name;
 		$this->args = $args;
@@ -216,7 +238,7 @@ final class FunctionCall {
 		return $this->name;
 	}
 
-	public function getArgs(): array {
+	public function getArgs() {
 		return $this->args;
 	}
 }
