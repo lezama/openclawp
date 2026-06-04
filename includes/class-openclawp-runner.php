@@ -152,12 +152,13 @@ final class OpenclaWP_Runner {
 		// the `client/<name>` form the agents-api conversation loop validates and
 		// matches tool calls against. for_agent()'s unprefixed output still backs
 		// the MCP tool surface and the provider-facing function names.
-		$tools = OpenclaWP_Tools_Resolver::loop_tools( $agent );
+		$tools        = OpenclaWP_Tools_Resolver::loop_tools( $agent );
+		$loop_context = self::tool_context_from_runtime_context( $runtime_context );
 		// Stamp identity onto the runtime context so the executor can
 		// resolve user/session/agent without an extra round-trip back into
 		// the runner. Used by the confirmation gate (#40) to look up
 		// per-user "always allow" entries and create decision rows.
-		$executor_context = $runtime_context;
+		$executor_context = array_merge( $runtime_context, $loop_context );
 		$executor_context['user_id']    = $user_id;
 		$executor_context['session_id'] = $session_id;
 		$executor_context['agent_slug'] = $agent_slug;
@@ -187,7 +188,6 @@ final class OpenclaWP_Runner {
 			'transcript_session_id' => $session_id,
 			'transcript_lock_ttl'   => 300,
 		);
-		$loop_context = self::tool_context_from_runtime_context( $runtime_context );
 		if ( ! empty( $loop_context['client_context'] ) || count( $loop_context ) > 1 ) {
 			$loop_options['context'] = $loop_context;
 		}
@@ -656,11 +656,11 @@ final class OpenclaWP_Runner {
 
 	/**
 	 * Extract tool calls from a GenerativeAiResult, in the shape
-	 * `[ ['name' => '…', 'parameters' => […]], … ]` that
+	 * `[ ['id' => '…', 'name' => '…', 'parameters' => […]], … ]` that
 	 * `WP_Agent_Conversation_Loop::mediate_tool_calls()` consumes.
 	 *
 	 * @param mixed $result
-	 * @return array<int, array{name:string, parameters:array}>
+	 * @return array<int, array{id?:string, name:string, parameters:array}>
 	 */
 	private static function extract_tool_calls( $result ): array {
 		if ( ! is_object( $result ) || ! method_exists( $result, 'toMessage' ) ) {
@@ -697,6 +697,7 @@ final class OpenclaWP_Runner {
 				continue;
 			}
 
+			$id   = method_exists( $fc, 'getId' ) ? trim( (string) $fc->getId() ) : '';
 			$name = method_exists( $fc, 'getName' ) ? (string) $fc->getName() : '';
 			$args = method_exists( $fc, 'getArgs' ) ? $fc->getArgs() : array();
 
@@ -708,10 +709,15 @@ final class OpenclaWP_Runner {
 			// to the loop-facing `client/<name>` form so the conversation loop's
 			// mediation matches it against the tool declarations and the executor's
 			// name map (both keyed on the loop name). {@see OpenclaWP_Tools_Resolver::loop_name()}.
-			$out[] = array(
+			$tool_call = array(
 				'name'       => OpenclaWP_Tools_Resolver::loop_name( $name ),
 				'parameters' => is_array( $args ) ? $args : array(),
 			);
+			if ( '' !== $id ) {
+				$tool_call['id'] = $id;
+			}
+
+			$out[] = $tool_call;
 		}
 
 		return $out;
