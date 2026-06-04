@@ -3,12 +3,12 @@
  * JSON-RPC bridge for `@automattic/agenttic-client`.
  *
  * Translates the agenttic protocol (JSON-RPC 2.0 over HTTP, A2A-shaped Task
- * envelopes) into canonical `agents/chat` ability calls. The motivation is
+ * envelopes) into local `openclawp/chat` ability calls. The motivation is
  * code reuse: the agenttic React hooks (`useAgentChat`, `useAgentSession`,
  * etc.) are the right UI layer for openclaWP, and they speak this wire
- * format — so we expose the canonical chat dispatcher under that wire
- * format rather than reimplementing the React side against the openclaWP
- * REST shape.
+ * format — so we expose the local openclaWP chat runtime under that wire
+ * format rather than reimplementing the React side against another REST
+ * shape.
  *
  * Wire shape, abridged (full schema in @automattic/agenttic-client v0.1.x):
  *
@@ -54,7 +54,7 @@
  *   - `message/stream` (real SSE; one frame per loop event plus a final
  *     Task envelope). We subscribe to canonical's `agents_api_loop_event`
  *     action and openclaWP's `openclawp_chat_turn_completed` telemetry
- *     event for the duration of the synchronous `agents/chat` call, write
+ *     event for the duration of the synchronous `openclawp/chat` call, write
  *     each one as a `data: {…}\n\n` SSE frame, and close with the
  *     completed Task envelope. Progress frames carry `result.kind =
  *     "status-update"` so clients that only want the final result can
@@ -170,8 +170,9 @@ final class OpenclaWP_Agenttic_Bridge {
 		$task_id    = isset( $params['id'] ) && is_string( $params['id'] ) ? $params['id'] : self::generate_task_id();
 
 		// Agenttic sends dynamic client context as a data part on the message.
-		// Preserve it as canonical agents/chat client_context so runtimes can
-		// expose it to model prompts and tool policies.
+		// Preserve it as openclaWP runtime client_context so product-owned keys
+		// can reach model prompts and tool policies without being filtered by
+		// the generic agents/chat transport schema.
 		$client_context = self::client_context_from_message( $message );
 
 		// When the request carries agents-api caller-chain headers, this is an
@@ -187,9 +188,9 @@ final class OpenclaWP_Agenttic_Bridge {
 		if ( ! function_exists( 'wp_get_ability' ) ) {
 			return self::error_response( $rpc_id, self::INTERNAL_ERROR, 'Abilities API is not loaded.' );
 		}
-		$chat = wp_get_ability( 'agents/chat' );
+		$chat = wp_get_ability( 'openclawp/chat' );
 		if ( null === $chat ) {
-			return self::error_response( $rpc_id, self::INTERNAL_ERROR, 'agents/chat ability is not registered.' );
+			return self::error_response( $rpc_id, self::INTERNAL_ERROR, 'openclawp/chat ability is not registered.' );
 		}
 
 		// Streaming opens the SSE response BEFORE invoking the chat ability
