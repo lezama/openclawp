@@ -96,10 +96,28 @@ final class OpenclaWP_Message_Adapter {
 			return null;
 		}
 		$id   = (string) ( $meta['tool_call_id'] ?? '' );
-		$args = is_array( $payload['parameters'] ?? null ) ? $payload['parameters'] : array();
+		$args = self::function_call_args( $payload['parameters'] ?? array() );
 
 		$call = new \WordPress\AiClient\Tools\DTO\FunctionCall( '' !== $id ? $id : null, $name, $args );
 		return new \WordPress\AiClient\Messages\DTO\MessagePart( $call );
+	}
+
+	/**
+	 * Return provider-safe function-call args for transcript replay.
+	 *
+	 * Anthropic requires `tool_use.input` to be a JSON object. PHP encodes an
+	 * empty array as `[]`, so a no-argument tool call must be carried as an
+	 * empty object when replayed through WP AI Client.
+	 *
+	 * @param mixed $parameters Stored tool parameters.
+	 * @return mixed
+	 */
+	private static function function_call_args( $parameters ) {
+		if ( array() === $parameters ) {
+			return new \stdClass();
+		}
+
+		return is_array( $parameters ) ? $parameters : array();
 	}
 
 	/**
