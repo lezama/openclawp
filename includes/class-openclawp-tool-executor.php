@@ -173,7 +173,7 @@ final class OpenclaWP_Tool_Executor implements WP_Agent_Tool_Executor {
 		// follow-up turn after a user decision wants to let THIS particular
 		// invocation through (matched by ability + decision_id).
 		$override = $this->runtime_context['openclawp_decision_override'] ?? null;
-		if ( is_array( $override ) && ( $override['ability'] ?? '' ) === $ability_name ) {
+		if ( self::decision_override_allows( $override, $ability_name, $parameters ) ) {
 			return null;
 		}
 
@@ -228,6 +228,58 @@ final class OpenclaWP_Tool_Executor implements WP_Agent_Tool_Executor {
 			),
 			'awaiting_decision' => $awaiting,
 		);
+	}
+
+	/**
+	 * Whether a one-shot runtime override allows this exact ability call.
+	 *
+	 * Older callers supplied only `{ ability }`; keep that behavior. Newer
+	 * callers can add `parameters` to bind the bypass to the exact tool
+	 * arguments the user already confirmed.
+	 *
+	 * @param mixed  $override     Runtime override payload.
+	 * @param string $ability_name Fully namespaced ability name.
+	 * @param array  $parameters   Tool-call parameters.
+	 * @return bool
+	 */
+	private static function decision_override_allows( $override, string $ability_name, array $parameters ): bool {
+		if ( ! is_array( $override ) || ( $override['ability'] ?? '' ) !== $ability_name ) {
+			return false;
+		}
+
+		if ( ! array_key_exists( 'parameters', $override ) ) {
+			return true;
+		}
+
+		if ( ! is_array( $override['parameters'] ) ) {
+			return false;
+		}
+
+		return self::normalized_parameters( $override['parameters'] ) === self::normalized_parameters( $parameters );
+	}
+
+	/**
+	 * Normalize associative-key order before comparing tool parameters.
+	 *
+	 * @param array $parameters Raw parameters.
+	 * @return array
+	 */
+	private static function normalized_parameters( array $parameters ): array {
+		if ( array_is_list( $parameters ) ) {
+			return array_map(
+				static fn( $value ) => is_array( $value ) ? self::normalized_parameters( $value ) : $value,
+				$parameters
+			);
+		}
+
+		ksort( $parameters );
+		foreach ( $parameters as $key => $value ) {
+			if ( is_array( $value ) ) {
+				$parameters[ $key ] = self::normalized_parameters( $value );
+			}
+		}
+
+		return $parameters;
 	}
 
 	/**
