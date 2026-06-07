@@ -41,19 +41,47 @@ final class OpenclaWP_Message_Adapter {
 		$model_role = \WordPress\AiClient\Messages\Enums\MessageRoleEnum::model();
 
 		$out = array();
+		// Anthropic rejects any tool_use block whose `id` is not a non-empty
+		// string ("messages.N.content.0.tool_use.id: Input should be a valid
+		// string"). Some turns were persisted without a `tool_call_id`, so we
+		// synthesize deterministic ids here and pair each tool_result to the
+		// oldest unmatched tool_call by order (the loop appends call then result).
+		$pending_call_ids = array();
+		$synth_n          = 0;
 		foreach ( $messages as $message ) {
 			$type = (string) ( $message['type'] ?? 'text' );
 
 			if ( 'tool_call' === $type ) {
-				$part = self::tool_call_part( $message );
+				$meta = is_array( $message['metadata'] ?? null ) ? $message['metadata'] : array();
+				$id   = (string) ( $meta['tool_call_id'] ?? '' );
+				if ( '' === $id ) {
+					$id = 'toolu_oc_' . ( ++$synth_n );
+				}
+				$part = self::tool_call_part( $message, $id );
 				if ( null !== $part ) {
-					$out[] = new \WordPress\AiClient\Messages\DTO\Message( $model_role, array( $part ) );
+					$out[]              = new \WordPress\AiClient\Messages\DTO\Message( $model_role, array( $part ) );
+					$pending_call_ids[] = $id;
 				}
 				continue;
 			}
 
 			if ( 'tool_result' === $type ) {
-				$part = self::tool_result_part( $message );
+				$meta = is_array( $message['metadata'] ?? null ) ? $message['metadata'] : array();
+				$id   = (string) ( $meta['tool_call_id'] ?? '' );
+				if ( '' === $id ) {
+					// No stored id — pair to the oldest unmatched tool_call. A
+					// tool_result with no matching tool_use is invalid, so drop it.
+					if ( empty( $pending_call_ids ) ) {
+						continue;
+					}
+					$id = array_shift( $pending_call_ids );
+				} else {
+					$pos = array_search( $id, $pending_call_ids, true );
+					if ( false !== $pos ) {
+						array_splice( $pending_call_ids, $pos, 1 );
+					}
+				}
+				$part = self::tool_result_part( $message, $id );
 				if ( null !== $part ) {
 					$out[] = new \WordPress\AiClient\Messages\DTO\Message( $user_role, array( $part ) );
 				}
@@ -83,22 +111,21 @@ final class OpenclaWP_Message_Adapter {
 	 * loop prefix). Returns null when the DTO is unavailable or the name is empty.
 	 *
 	 * @param array<string,mixed> $message Stored tool_call message.
+	 * @param string              $id      Resolved (never-empty) tool_use id.
 	 * @return object|null
 	 */
-	private static function tool_call_part( array $message ) {
+	private static function tool_call_part( array $message, string $id ) {
 		if ( ! class_exists( '\\WordPress\\AiClient\\Tools\\DTO\\FunctionCall' ) ) {
 			return null;
 		}
 		$payload = is_array( $message['payload'] ?? null ) ? $message['payload'] : array();
-		$meta    = is_array( $message['metadata'] ?? null ) ? $message['metadata'] : array();
 		$name    = OpenclaWP_Tools_Resolver::provider_name( (string) ( $payload['tool_name'] ?? '' ) );
 		if ( '' === $name ) {
 			return null;
 		}
-		$id   = (string) ( $meta['tool_call_id'] ?? '' );
 		$args = self::function_call_args( $payload['parameters'] ?? array() );
 
-		$call = new \WordPress\AiClient\Tools\DTO\FunctionCall( '' !== $id ? $id : null, $name, $args );
+		$call = new \WordPress\AiClient\Tools\DTO\FunctionCall( $id, $name, $args );
 		return new \WordPress\AiClient\Messages\DTO\MessagePart( $call );
 	}
 
@@ -125,19 +152,18 @@ final class OpenclaWP_Message_Adapter {
 	 * `tool_result` transcript message, matched to its call by `tool_call_id`.
 	 *
 	 * @param array<string,mixed> $message Stored tool_result message.
+	 * @param string              $id      Resolved (never-empty) tool_use id to match its call.
 	 * @return object|null
 	 */
-	private static function tool_result_part( array $message ) {
+	private static function tool_result_part( array $message, string $id ) {
 		if ( ! class_exists( '\\WordPress\\AiClient\\Tools\\DTO\\FunctionResponse' ) ) {
 			return null;
 		}
 		$payload  = is_array( $message['payload'] ?? null ) ? $message['payload'] : array();
-		$meta     = is_array( $message['metadata'] ?? null ) ? $message['metadata'] : array();
 		$name     = OpenclaWP_Tools_Resolver::provider_name( (string) ( $payload['tool_name'] ?? '' ) );
-		$id       = (string) ( $meta['tool_call_id'] ?? '' );
 		$response = array_key_exists( 'result', $payload ) ? $payload['result'] : ( $message['content'] ?? '' );
 
-		$resp = new \WordPress\AiClient\Tools\DTO\FunctionResponse( '' !== $id ? $id : null, '' !== $name ? $name : null, $response );
+		$resp = new \WordPress\AiClient\Tools\DTO\FunctionResponse( $id, '' !== $name ? $name : null, $response );
 		return new \WordPress\AiClient\Messages\DTO\MessagePart( $resp );
 	}
 
