@@ -77,14 +77,15 @@ if not PERSONA and PERSONA_FILE and Path(PERSONA_FILE).exists():
 
 def validate_config() -> list:
     missing = []
-    if not GEMINI_API_KEY:
-        missing.append("GEMINI_API_KEY")
     if not WP_BASE:
         missing.append("OPENCLAWP_VOICE_WP_BASE")
     if not AGENT_SLUG:
         missing.append("OPENCLAWP_VOICE_AGENT")
     if not AUTH_FILE.exists():
         missing.append(f"auth file {AUTH_FILE} (JSON {{user, app_password}})")
+    # GEMINI_API_KEY is optional: the preferred path is an ephemeral token
+    # minted by WP (POST /openclawp/v1/voice/session) from the key the AI
+    # Client credential store already owns.
     return missing
 
 
@@ -181,6 +182,47 @@ async def ask_agent(consulta: str, session: dict) -> str:
     return text or "El agente no devolvió respuesta."
 
 
+# ── Live credential: WP-minted ephemeral token, env API key as fallback ──────
+
+
+async def get_live_credential() -> tuple:
+    """Returns (ws_url_with_credential, source).
+
+    Preferred: ask WordPress to mint a single-use ephemeral Live token from
+    the provider key stored in the AI Client (the key never reaches us).
+    Fallback: GEMINI_API_KEY from the local environment, for sites whose
+    openclaWP predates /voice/session or has no Google credentials stored.
+    """
+    auth = read_auth()
+    url = f"{WP_BASE}/wp-json/openclawp/v1/voice/session"
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            res = await client.post(
+                url,
+                json={"agent": AGENT_SLUG, "model": GEMINI_MODEL},
+                auth=(auth["user"], auth["app_password"]),
+            )
+        if res.status_code == 200:
+            data = res.json()
+            cred = data.get("credential") or {}
+            ws_url = data.get("ws_url") or GEMINI_WS_URL
+            if cred.get("value"):
+                logger.info("Using WP-minted credential (%s).", cred.get("type"))
+                # Ephemeral tokens authenticate via ?access_token= (v1alpha
+                # only); plain API keys via ?key=.
+                param = "access_token" if cred.get("type") == "ephemeral_token" else "key"
+                return f"{ws_url}?{param}={cred['value']}", cred.get("type", "unknown")
+        else:
+            logger.warning("voice/session HTTP %s: %s", res.status_code, res.text[:200])
+    except Exception as e:  # noqa: BLE001 — fall back to env key
+        logger.warning("voice/session unreachable: %s", e)
+
+    if GEMINI_API_KEY:
+        logger.info("Falling back to local GEMINI_API_KEY.")
+        return f"{GEMINI_WS_URL}?key={GEMINI_API_KEY}", "env_api_key"
+    return "", ""
+
+
 # ── Gemini Live session setup ─────────────────────────────────────────────────
 
 
@@ -250,8 +292,16 @@ async def voice_endpoint(websocket: WebSocket):
     user_text = ""
     model_text = ""
 
-    url = f"{GEMINI_WS_URL}?key={GEMINI_API_KEY}"
-    logger.info("Voice session start: agent=%s model=%s", AGENT_SLUG, GEMINI_MODEL)
+    url, cred_source = await get_live_credential()
+    if not url:
+        await websocket.send_json(
+            {"text": "Sin credenciales para Gemini Live: configurá la key de Google en el AI Client de WP o GEMINI_API_KEY local."}
+        )
+        await websocket.close(code=1008)
+        return
+    logger.info(
+        "Voice session start: agent=%s model=%s cred=%s", AGENT_SLUG, GEMINI_MODEL, cred_source
+    )
 
     try:
         async with websockets.connect(url, max_size=16 * 1024 * 1024) as gemini_ws:

@@ -88,9 +88,20 @@ launchctl load ~/Library/LaunchAgents/com.openclawp.voice-gateway.plist
 
 ## Configuration
 
+### Credentials: WordPress mints them (preferred)
+
+On session start the gateway calls `POST /openclawp/v1/voice/session`, which
+exchanges the Google key already stored in WordPress' AI Client credential
+store for a **single-use ephemeral Live token** (the long-lived key never
+leaves WP). See `docs/voice-gateway-core-proposal.md` — this flow is shaped as
+a proof of concept of what wp-ai-client could support natively.
+
+`GEMINI_API_KEY` in the local `.env` is only a fallback for sites whose
+openclaWP predates `/voice/session` or has no Google credentials stored.
+
 | Variable | Default | Meaning |
 |---|---|---|
-| `GEMINI_API_KEY` | — | AI Studio key (`GOOGLE_API_KEY` fallback) |
+| `GEMINI_API_KEY` | — | Optional fallback AI Studio key (`GOOGLE_API_KEY` works too) |
 | `OPENCLAWP_VOICE_WP_BASE` | — | Site URL, no trailing slash |
 | `OPENCLAWP_VOICE_AGENT` | — | Agent slug (`wp_register_agent`) |
 | `OPENCLAWP_VOICE_AGENT_LABEL` | slug | Name the voice shell uses |
