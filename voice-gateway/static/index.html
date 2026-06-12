@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voz — openclaWP</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    background: #111418; color: #e8eaed;
+    font: 16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+    border-bottom: 1px solid #2a2f36;
+  }
+  header h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
+  #status { font-size: 12px; padding: 3px 10px; border-radius: 99px; background: #2a2f36; color: #9aa0a6; }
+  #status.on { background: #143d2b; color: #6fd99a; }
+  #log { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 72ch; padding: 8px 14px; border-radius: 14px; white-space: pre-wrap; }
+  .user { align-self: flex-end; background: #1a73e8; color: #fff; }
+  .agent { align-self: flex-start; background: #23282f; }
+  .sys { align-self: center; color: #9aa0a6; font-size: 12px; background: none; padding: 2px; }
+  .thought { align-self: flex-start; color: #b98ef7; font-size: 12px; background: none; padding: 2px 14px; }
+  .interim { opacity: .55; }
+  footer { display: flex; gap: 10px; padding: 14px 18px; border-top: 1px solid #2a2f36; }
+  #mic {
+    width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
+    font-size: 22px; background: #2a2f36; color: #e8eaed; flex: none;
+  }
+  #mic.rec { background: #d93025; animation: pulse 1.4s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 10px rgba(217,48,37,.25); } }
+  #text { flex: 1; border-radius: 26px; border: 1px solid #2a2f36; background: #1a1e24; color: inherit; padding: 0 18px; font: inherit; }
+  #text:focus { outline: none; border-color: #1a73e8; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Hablar con el agente</h1>
+  <span id="status">Desconectado</span>
+</header>
+<div id="log"></div>
+<footer>
+  <button id="mic" title="Hablar">🎙</button>
+  <input id="text" placeholder="…o escribí acá" autocomplete="off">
+</footer>
+<script>
+const logEl = document.getElementById('log');
+const micBtn = document.getElementById('mic');
+const textEl = document.getElementById('text');
+const statusEl = document.getElementById('status');
+
+let ws = null, audioCtx = null, micStream = null, procNode = null;
+let recording = false, playTime = 0, playing = [];
+let userEl = null, agentEl = null;
+
+function addMsg(cls, text) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + cls;
+  el.textContent = text;
+  logEl.appendChild(el);
+  logEl.scrollTop = logEl.scrollHeight;
+  return el;
+}
+
+function transcript(role, text, final) {
+  let el = role === 'user' ? userEl : agentEl;
+  if (!el) {
+    el = addMsg(role + ' interim', '');
+    if (role === 'user') userEl = el; else agentEl = el;
+  }
+  el.textContent = text;
+  logEl.scrollTop = logEl.scrollHeight;
+  if (final) {
+    el.classList.remove('interim');
+    if (role === 'user') userEl = null; else agentEl = null;
+  }
+}
+
+// WS URL relative to this page so a reverse-proxy path prefix (/voz/) works.
+function wsUrl() {
+  const u = new URL('ws/voice', location.href);
+  u.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return u.href;
+}
+
+function connect(startMic) {
+  ws = new WebSocket(wsUrl());
+  ws.onopen = () => { statusEl.textContent = 'Conectado'; statusEl.className = 'on'; };
+  ws.onclose = (e) => {
+    statusEl.textContent = 'Desconectado'; statusEl.className = '';
+    stopMic();
+    if (e.code !== 1000) setTimeout(() => connect(false), 1500);
+  };
+  ws.onmessage = (ev) => {
+    const d = JSON.parse(ev.data);
+    if (d.type === 'ready' && startMic) startRec();
+    else if (d.type === 'user_transcript') transcript('user', d.text, d.final);
+    else if (d.type === 'agent_transcript') transcript('agent', d.text, d.final);
+    else if (d.type === 'agent_thought') addMsg('thought', '→ agente: ' + d.text);
+    else if (d.type === 'interrupted') stopPlayback();
+    else if (d.text) addMsg('sys', d.text);
+    if (d.audio) playChunk(d.audio);
+  };
+}
+
+// ── Playback: raw PCM s16 mono 24 kHz, scheduled back to back ──
+function playChunk(b64) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const i16 = new Int16Array(bytes.buffer);
+  const f32 = new Float32Array(i16.length);
+  for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
+  const buf = audioCtx.createBuffer(1, f32.length, 24000);
+  buf.copyToChannel(f32, 0);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  if (playTime < audioCtx.currentTime) playTime = audioCtx.currentTime;
+  src.start(playTime);
+  playTime += buf.duration;
+  playing.push(src);
+  src.onended = () => { playing = playing.filter(s => s !== src); };
+}
+
+function stopPlayback() { // barge-in: kill everything scheduled
+  playing.forEach(s => { try { s.stop(); } catch (e) {} });
+  playing = [];
+  playTime = 0;
+}
+
+// ── Mic capture: downsample to PCM s16 mono 16 kHz, b64 over WS ──
+function downsample(f32, fromRate, toRate) {
+  const ratio = fromRate / toRate;
+  const out = new Int16Array(Math.floor(f32.length / ratio));
+  for (let i = 0; i < out.length; i++) {
+    const s = Math.max(-1, Math.min(1, f32[Math.floor(i * ratio)]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return out;
+}
+
+async function startRec() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) { connect(true); return; }
+  if (!navigator.mediaDevices?.getUserMedia) { addMsg('sys', 'Sin acceso al micrófono (¿origen no seguro?).'); return; }
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const src = audioCtx.createMediaStreamSource(micStream);
+  procNode = audioCtx.createScriptProcessor(4096, 1, 1);
+  src.connect(procNode);
+  const mute = audioCtx.createGain(); mute.gain.value = 0;
+  procNode.connect(mute); mute.connect(audioCtx.destination);
+  procNode.onaudioprocess = (e) => {
+    if (!recording || ws.readyState !== WebSocket.OPEN) return;
+    const pcm = downsample(e.inputBuffer.getChannelData(0), audioCtx.sampleRate, 16000);
+    const bytes = new Uint8Array(pcm.buffer);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    ws.send(JSON.stringify({ audio: btoa(bin) }));
+  };
+  recording = true;
+  micBtn.classList.add('rec');
+}
+
+function stopMic() {
+  recording = false;
+  micBtn.classList.remove('rec');
+  if (procNode) { procNode.disconnect(); procNode = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+}
+
+micBtn.onclick = () => { recording ? stopMic() : startRec(); };
+textEl.onkeydown = (e) => {
+  if (e.key !== 'Enter' || !textEl.value.trim()) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) { connect(false); return; }
+  addMsg('user', textEl.value.trim());
+  ws.send(JSON.stringify({ text: textEl.value.trim() }));
+  textEl.value = '';
+};
+
+connect(false);
+</script>
+</body>
+</html>
