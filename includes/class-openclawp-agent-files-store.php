@@ -14,9 +14,9 @@
  * author these documents exclusively through openclaWP's own surface
  * (see {@see OpenclaWP_Agent_Files_Admin}).
  *
- * TODO (follow-up PR): wire the file contents into the runtime system prompt
- * via `OpenclaWP_Canonical_Chat_Handler`. This PR ships the CPT + admin UI
- * only so admins can start authoring files while the runtime side bakes.
+ * Runtime consumer: {@see OpenclaWP_Runner} (see `build_turn_runner()` around
+ * the `using_system_instruction()` call) appends `for_agent_as_text()` to the
+ * agent's static description on every turn.
  *
  * @package OpenclaWP
  * @since   0.11.0
@@ -104,6 +104,33 @@ final class OpenclaWP_Agent_Files_Store {
 			}
 		}
 		return $out;
+	}
+
+	/**
+	 * Return the files targeted at a given agent concatenated as plain text,
+	 * ready to append to a system prompt.
+	 *
+	 * Each file is emitted as:
+	 *
+	 *     === {post_title} ===
+	 *     {post_content}
+	 *
+	 * Sections are joined with a blank line. Files with empty bodies are
+	 * skipped. Returns an empty string when no files apply — callers can
+	 * treat the result as a safe no-op append.
+	 *
+	 * @param string $agent_slug Agent slug, e.g. `openclawp-example`.
+	 */
+	public static function for_agent_as_text( string $agent_slug ): string {
+		$sections = array();
+		foreach ( self::for_agent( $agent_slug ) as $post ) {
+			$body = (string) $post->post_content;
+			if ( '' === trim( $body ) ) {
+				continue;
+			}
+			$sections[] = '=== ' . $post->post_title . " ===\n" . $body;
+		}
+		return implode( "\n\n", $sections );
 	}
 
 	/**
