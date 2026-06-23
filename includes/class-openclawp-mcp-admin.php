@@ -16,9 +16,14 @@ final class OpenclaWP_Mcp_Admin {
 
 	public const PAGE_SLUG = 'openclawp-mcp-servers';
 
+	public const ACTION_REGENERATE  = 'openclawp_mcp_regenerate_token';
+	public const ACTION_ACKNOWLEDGE = 'openclawp_mcp_acknowledge_token';
+
 	public static function register(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_submenu' ), 20 );
 		add_action( 'admin_init', array( __CLASS__, 'handle_post' ) );
+		add_action( 'admin_post_' . self::ACTION_REGENERATE, array( __CLASS__, 'handle_regenerate_token' ) );
+		add_action( 'admin_post_' . self::ACTION_ACKNOWLEDGE, array( __CLASS__, 'handle_acknowledge_token' ) );
 	}
 
 	public static function register_submenu(): void {
@@ -89,18 +94,61 @@ final class OpenclaWP_Mcp_Admin {
 		// phpcs:enable
 	}
 
+	/**
+	 * Slug-keyed regenerate routed through `admin-post.php`. Mirrors the
+	 * post-create disclosure flow: rotate the bearer, then redirect back
+	 * to the list view with `?regenerated=<slug>` so the next render
+	 * shows the new token + client config snippets.
+	 */
+	public static function handle_regenerate_token(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to regenerate this token.', 'openclawp' ), 403 );
+		}
+		// phpcs:disable WordPress.Security.NonceVerification.Missing
+		$slug = isset( $_REQUEST['slug'] ) ? sanitize_title( wp_unslash( (string) $_REQUEST['slug'] ) ) : '';
+		// phpcs:enable
+		check_admin_referer( self::ACTION_REGENERATE . '_' . $slug );
+
+		$token = OpenclaWP_Mcp_Server_Store::regenerate_token( $slug );
+		if ( null === $token ) {
+			self::redirect( array( 'error' => 'unknown_slug' ) );
+		}
+		self::redirect( array( 'regenerated' => $slug ) );
+	}
+
+	/**
+	 * "I've saved this" — purge the flash transient so subsequent
+	 * refreshes can no longer reveal the plaintext token, then bounce
+	 * back to the list view.
+	 */
+	public static function handle_acknowledge_token(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to acknowledge this token.', 'openclawp' ), 403 );
+		}
+		// phpcs:disable WordPress.Security.NonceVerification.Missing
+		$post_id = isset( $_REQUEST['post_id'] ) ? (int) $_REQUEST['post_id'] : 0;
+		// phpcs:enable
+		check_admin_referer( self::ACTION_ACKNOWLEDGE . '_' . $post_id );
+
+		if ( $post_id > 0 ) {
+			OpenclaWP_Mcp_Server_Store::acknowledge_token( $post_id );
+		}
+		self::redirect();
+	}
+
 	public static function render_page(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended
-		$action  = isset( $_GET['action'] ) ? sanitize_key( (string) $_GET['action'] ) : '';
-		$created = isset( $_GET['created'] ) ? (int) $_GET['created'] : 0;
-		$rotated = isset( $_GET['rotated'] ) ? (int) $_GET['rotated'] : 0;
-		$error   = isset( $_GET['error'] ) ? sanitize_key( (string) $_GET['error'] ) : '';
+		$action      = isset( $_GET['action'] ) ? sanitize_key( (string) $_GET['action'] ) : '';
+		$created     = isset( $_GET['created'] ) ? (int) $_GET['created'] : 0;
+		$rotated     = isset( $_GET['rotated'] ) ? (int) $_GET['rotated'] : 0;
+		$regenerated = isset( $_GET['regenerated'] ) ? sanitize_title( wp_unslash( (string) $_GET['regenerated'] ) ) : '';
+		$error       = isset( $_GET['error'] ) ? sanitize_key( (string) $_GET['error'] ) : '';
 		// phpcs:enable
 
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html__( 'openclaWP — MCP Servers', 'openclawp' ) . '</h1>';
 		echo '<p class="description">' . esc_html(
-			__( 'Let external AI clients like Claude Code, Cursor, or VS Code call one of your agent\'s tools. Each MCP server gets its own URL and a bearer token shown once on creation — copy it then.', 'openclawp' )
+			__( 'Let external AI clients like Claude Code, Cursor, or VS Code call one of your agent\'s tools. Each server gets its own URL and a bearer token. Tokens are recoverable for 15 minutes after creation or regeneration — after that, regenerate to get a fresh one.', 'openclawp' )
 		) . '</p>';
 
 		if ( OpenclaWP_Bootstrap::legacy_mcp_enabled() ) {
@@ -116,10 +164,16 @@ final class OpenclaWP_Mcp_Admin {
 			);
 		}
 		if ( $created > 0 ) {
-			self::render_token_flash( $created, __( 'Server created. Copy this bearer token now — it will not be shown again:', 'openclawp' ) );
+			self::render_token_disclosure( $created, __( 'Server created. Copy this bearer token now — it stays recoverable on this page for 15 minutes:', 'openclawp' ) );
 		}
 		if ( $rotated > 0 ) {
-			self::render_token_flash( $rotated, __( 'Token rotated. Copy the new bearer — the previous token is no longer valid:', 'openclawp' ) );
+			self::render_token_disclosure( $rotated, __( 'Token regenerated. Copy the new bearer — the previous token is no longer valid:', 'openclawp' ) );
+		}
+		if ( '' !== $regenerated ) {
+			$server = OpenclaWP_Mcp_Server_Store::find_by_slug( $regenerated );
+			if ( null !== $server ) {
+				self::render_token_disclosure( $server->ID, __( 'Token regenerated. Copy the new bearer — the previous token is no longer valid:', 'openclawp' ) );
+			}
 		}
 
 		if ( 'new' === $action ) {
@@ -162,6 +216,17 @@ final class OpenclaWP_Mcp_Admin {
 			$enabled          = OpenclaWP_Mcp_Server_Store::is_enabled( $post );
 			$last4            = OpenclaWP_Mcp_Server_Store::token_last4( $post );
 
+			$regenerate_url = wp_nonce_url(
+				add_query_arg(
+					array(
+						'action' => self::ACTION_REGENERATE,
+						'slug'   => $post->post_name,
+					),
+					admin_url( 'admin-post.php' )
+				),
+				self::ACTION_REGENERATE . '_' . $post->post_name
+			);
+
 			echo '<tr>';
 			echo '<td><strong>' . esc_html( $post->post_title ) . '</strong><br /><code>' . esc_html( $post->post_name ) . '</code></td>';
 			echo '<td><code>' . esc_html( $adapter_endpoint ) . '</code>';
@@ -170,13 +235,11 @@ final class OpenclaWP_Mcp_Admin {
 			}
 			echo '</td>';
 			echo '<td><code>' . esc_html( OpenclaWP_Mcp_Server_Store::agent_slug( $post ) ) . '</code></td>';
-			echo '<td><code>op_…' . esc_html( $last4 ) . '</code> ';
-			self::action_button( 'rotate', $post->ID, __( 'Rotate', 'openclawp' ), 'button-link' );
-			echo '</td>';
+			echo '<td><code>op_…' . esc_html( $last4 ) . '</code></td>';
 			echo '<td>' . ( $enabled ? esc_html__( 'enabled', 'openclawp' ) : '<em>' . esc_html__( 'disabled', 'openclawp' ) . '</em>' ) . '</td>';
 			echo '<td>';
 			self::action_button( 'toggle', $post->ID, $enabled ? __( 'Disable', 'openclawp' ) : __( 'Enable', 'openclawp' ), 'button-secondary', array( 'enabled' => $enabled ? '' : '1' ) );
-			echo ' ';
+			echo ' <a href="' . esc_url( $regenerate_url ) . '" class="button-link">' . esc_html__( 'Regenerate token', 'openclawp' ) . '</a> ';
 			self::action_button( 'delete', $post->ID, __( 'Delete', 'openclawp' ), 'button-link-delete' );
 			echo '</td>';
 			echo '</tr>';
@@ -229,14 +292,120 @@ final class OpenclaWP_Mcp_Admin {
 		<?php
 	}
 
-	private static function render_token_flash( int $post_id, string $intro ): void {
-		$token = OpenclaWP_Mcp_Server_Store::pop_flashed_token( $post_id );
+	/**
+	 * Show the recoverable plaintext token + opinionated client config
+	 * snippets + an explicit "I've saved this" acknowledge gate. The
+	 * read is non-destructive so an accidental refresh within the
+	 * 15-minute window keeps showing the token; only the explicit
+	 * acknowledge (or transient expiry) purges it.
+	 */
+	private static function render_token_disclosure( int $post_id, string $intro ): void {
+		$token = OpenclaWP_Mcp_Server_Store::peek_flashed_token( $post_id );
 		if ( null === $token ) {
 			return;
 		}
+		$post = get_post( $post_id );
+		if ( ! $post instanceof \WP_Post ) {
+			return;
+		}
+		$slug      = (string) $post->post_name;
+		$endpoint  = rest_url( OpenclaWP_Mcp_Rest::NAMESPACE . '/mcp-adapter/' . $slug );
+		$ack_url   = admin_url( 'admin-post.php' );
+		$ack_nonce = self::ACTION_ACKNOWLEDGE . '_' . $post_id;
+
 		echo '<div class="notice notice-success"><p>' . esc_html( $intro ) . '</p>';
 		echo '<p><code style="font-size: 14px; padding: 6px; background: #f0f0f1;">' . esc_html( $token ) . '</code></p>';
+		echo '<p class="description">' . esc_html__( 'Recoverable for 15 minutes after creation or regeneration. Acknowledging below purges it immediately.', 'openclawp' ) . '</p>';
+
+		self::render_client_snippets( $slug, $endpoint, $token );
+
+		echo '<details style="margin-top:12px;"><summary><strong>' . esc_html__( "I've saved this — go to the server list", 'openclawp' ) . '</strong></summary>';
+		echo '<form method="post" action="' . esc_url( $ack_url ) . '" style="margin-top:8px;">';
+		wp_nonce_field( $ack_nonce );
+		echo '<input type="hidden" name="action" value="' . esc_attr( self::ACTION_ACKNOWLEDGE ) . '" />';
+		echo '<input type="hidden" name="post_id" value="' . (int) $post_id . '" />';
+		echo '<button type="submit" class="button button-secondary">' . esc_html__( 'Purge token and continue', 'openclawp' ) . '</button>';
+		echo '</form></details>';
 		echo '</div>';
+	}
+
+	/**
+	 * Render copy-pasteable config snippets for the named clients in
+	 * the page subtitle. Stacked cards (no JS dependency beyond the
+	 * inline Copy button) so we don't drag in a tabs bundle.
+	 */
+	private static function render_client_snippets( string $slug, string $endpoint, string $token ): void {
+		$snippets = array(
+			array(
+				'label'    => __( 'Claude Code (.mcp.json)', 'openclawp' ),
+				'language' => 'json',
+				'body'     => self::snippet_claude_code( $slug, $endpoint, $token ),
+			),
+			array(
+				'label'    => __( 'Cursor (.cursor/mcp.json)', 'openclawp' ),
+				'language' => 'json',
+				'body'     => self::snippet_cursor( $slug, $endpoint, $token ),
+			),
+			array(
+				'label'    => __( 'VS Code (Continue / Cline) — JSON', 'openclawp' ),
+				'language' => 'json',
+				'body'     => self::snippet_vscode( $slug, $endpoint, $token ),
+			),
+		);
+
+		echo '<div class="openclawp-mcp-snippets" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">';
+		echo '<p><strong>' . esc_html__( 'Client config snippets', 'openclawp' ) . '</strong></p>';
+
+		foreach ( $snippets as $i => $snippet ) {
+			$dom_id = 'openclawp-mcp-snippet-' . (int) $i . '-' . sanitize_html_class( $slug );
+			echo '<div class="card" style="padding:10px;border:1px solid #ccd0d4;background:#fff;">';
+			echo '<p style="margin:0 0 6px;display:flex;align-items:center;justify-content:space-between;gap:8px;">';
+			echo '<strong>' . esc_html( $snippet['label'] ) . '</strong>';
+			printf(
+				'<button type="button" class="button button-small" onclick="%s">%s</button>',
+				esc_attr(
+					sprintf(
+						'var el=document.getElementById(%s);if(el){navigator.clipboard.writeText(el.textContent).then(function(){this.textContent=%s}.bind(this))}return false;',
+						(string) wp_json_encode( $dom_id ),
+						(string) wp_json_encode( __( 'Copied', 'openclawp' ) )
+					)
+				),
+				esc_html__( 'Copy', 'openclawp' )
+			);
+			echo '</p>';
+			echo '<pre id="' . esc_attr( $dom_id ) . '" style="margin:0;padding:8px;background:#f6f7f7;overflow:auto;white-space:pre;font-size:12px;">';
+			echo esc_html( $snippet['body'] );
+			echo '</pre>';
+			echo '</div>';
+		}
+
+		echo '<p class="description">' . esc_html__( 'VS Code MCP support varies by extension (Continue, Cline, MCP Inspector, etc.); the JSON above matches the most common HTTP-transport shape — adjust the wrapper key if your extension uses a different schema.', 'openclawp' ) . '</p>';
+		echo '</div>';
+	}
+
+	private static function snippet_claude_code( string $slug, string $endpoint, string $token ): string {
+		return (string) wp_json_encode(
+			array(
+				'mcpServers' => array(
+					$slug => array(
+						'transport' => 'http',
+						'url'       => $endpoint,
+						'headers'   => array( 'Authorization' => 'Bearer ' . $token ),
+					),
+				),
+			),
+			JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
+		);
+	}
+
+	private static function snippet_cursor( string $slug, string $endpoint, string $token ): string {
+		// Same shape as Claude Code — Cursor's .cursor/mcp.json mirrors the
+		// `mcpServers` map convention.
+		return self::snippet_claude_code( $slug, $endpoint, $token );
+	}
+
+	private static function snippet_vscode( string $slug, string $endpoint, string $token ): string {
+		return self::snippet_claude_code( $slug, $endpoint, $token );
 	}
 
 	private static function action_button( string $action, int $post_id, string $label, string $css_class, array $extra = array() ): void {
