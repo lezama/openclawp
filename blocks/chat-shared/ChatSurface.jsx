@@ -24,6 +24,7 @@ import { AgentUI } from '@automattic/agenttic-ui';
 import '@automattic/agenttic-ui/index.css';
 import Card from './Card.jsx';
 import { COMMANDS, parseInput } from './commands/index.js';
+import { useSetupWizard } from './setup/index.js';
 
 const SESSION_KEY = 'openclawp:active-session';
 
@@ -258,12 +259,37 @@ export default function ChatSurface( { agents, defaultAgent, bridgeUrl, nonce, r
 
 	const handleCardAction = useCallback(
 		( action ) => {
-			if ( action && action.command ) {
+			if ( ! action ) {
+				return;
+			}
+			// Wizard cards attach an inline `onClick`; fall through to the
+			// command dispatch path otherwise so existing slash-command cards
+			// keep working untouched.
+			if ( typeof action.onClick === 'function' ) {
+				action.onClick();
+				return;
+			}
+			if ( action.command ) {
 				runCommand( action.command );
 			}
 		},
 		[ runCommand ]
 	);
+
+	// First-run setup wizard. Renders a single card above the regular card
+	// stack until the user finishes or dismisses it. `openclaWPConfig`
+	// carries the persisted `openclawp_setup_completed` flag plus the
+	// `/setup` REST surface used to advance through the steps.
+	const wpConfig =
+		typeof window !== 'undefined' && window.openclaWPConfig
+			? window.openclaWPConfig
+			: {};
+	const setupEnabled = wpConfig.setupCompleted === false;
+	const setup = useSetupWizard( {
+		enabled: setupEnabled,
+		restNamespace,
+		nonce,
+	} );
 
 	// Poll for pending tool-call decisions after the assistant finishes
 	// processing. One immediate check + a short follow-up; we deliberately
@@ -340,8 +366,15 @@ export default function ChatSurface( { agents, defaultAgent, bridgeUrl, nonce, r
 				/>
 			) }
 
-			{ cardStack.length > 0 && (
+			{ ( setup.card || cardStack.length > 0 ) && (
 				<div className="openclawp-card-stack">
+					{ setup.card && (
+						<Card
+							card={ setup.card }
+							onDismiss={ setup.dismiss }
+							onAction={ handleCardAction }
+						/>
+					) }
 					{ cardStack.map( ( card ) => (
 						<Card
 							key={ card.__key }

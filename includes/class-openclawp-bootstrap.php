@@ -70,6 +70,7 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Rest::register();
 		OpenclaWP_Agency_Rest::register();
 		OpenclaWP_Decisions_Rest::register();
+		OpenclaWP_Setup_Rest::register();
 		OpenclaWP_Agenttic_Bridge::register();
 		OpenclaWP_Agent_Card::register();
 		OpenclaWP_A2a_Client_Bridge::register();
@@ -162,9 +163,11 @@ final class OpenclaWP_Bootstrap {
 			$handle,
 			'openclaWPConfig',
 			array(
-				'restNamespace' => 'openclawp/v1',
-				'bridgeUrl'     => esc_url_raw( rest_url( 'openclawp/v1/agenttic' ) ),
-				'nonce'         => wp_create_nonce( 'wp_rest' ),
+				'restNamespace'  => 'openclawp/v1',
+				'bridgeUrl'      => esc_url_raw( rest_url( 'openclawp/v1/agenttic' ) ),
+				'nonce'          => wp_create_nonce( 'wp_rest' ),
+				'setupCompleted' => '1' === get_option( 'openclawp_setup_completed', '' ),
+				'setupRestUrl'   => esc_url_raw( rest_url( 'openclawp/v1/setup' ) ),
 			)
 		);
 	}
