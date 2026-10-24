@@ -100,6 +100,18 @@ final class UsageRecorderTest extends TestCase {
 		$this->assertSame( 0.0, $result['cost'] );
 	}
 
+	public function test_dated_snapshot_is_priced_as_its_alias(): void {
+		// 1000 input * 0.003 + 1000 output * 0.015 = 0.018
+		$result = OpenclaWP_Usage_Recorder::estimate_cost( 'anthropic', 'claude-sonnet-4-5-20250929', 1000, 1000 );
+		$this->assertTrue( $result['resolved'] );
+		$this->assertEqualsWithDelta( 0.018, $result['cost'], 0.000001 );
+	}
+
+	public function test_unknown_dated_model_stays_unresolved(): void {
+		$result = OpenclaWP_Usage_Recorder::estimate_cost( 'fake-provider', 'fake-model-20250101', 1000, 1000 );
+		$this->assertFalse( $result['resolved'] );
+	}
+
 	public function test_cost_is_rounded_to_six_decimals(): void {
 		// 1 input token on haiku = 0.000001. Verify the round() in estimate_cost.
 		$result = OpenclaWP_Usage_Recorder::estimate_cost( 'anthropic', 'claude-haiku-4-5', 1, 1 );

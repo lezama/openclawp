@@ -145,6 +145,7 @@ final class OpenclaWP_Usage_Recorder {
 	public static function pricing_table(): array {
 		$baseline = array(
 			'anthropic|claude-haiku-4-5'   => array( 'input_per_1k' => 0.001,   'output_per_1k' => 0.005 ),
+			'anthropic|claude-sonnet-4-5'  => array( 'input_per_1k' => 0.003,   'output_per_1k' => 0.015 ),
 			'anthropic|claude-sonnet-4-6'  => array( 'input_per_1k' => 0.003,   'output_per_1k' => 0.015 ),
 			'anthropic|claude-opus-4-7'    => array( 'input_per_1k' => 0.015,   'output_per_1k' => 0.075 ),
 			'openai|gpt-4o-mini'           => array( 'input_per_1k' => 0.00015, 'output_per_1k' => 0.0006 ),
@@ -179,7 +180,9 @@ final class OpenclaWP_Usage_Recorder {
 
 		$table = self::pricing_table();
 		$key   = $provider . '|' . $model;
-		$entry = $table[ $key ] ?? ( $table[ $provider . '|*' ] ?? null );
+		// Pinned snapshots carry a date suffix (claude-sonnet-4-5-20250929): price them as their alias.
+		$alias = $provider . '|' . preg_replace( '/-\d{8}$/', '', $model );
+		$entry = $table[ $key ] ?? ( $table[ $alias ] ?? ( $table[ $provider . '|*' ] ?? null ) );
 
 		if ( null === $entry || ! is_array( $entry ) ) {
 			return array( 'cost' => 0.0, 'resolved' => false );
