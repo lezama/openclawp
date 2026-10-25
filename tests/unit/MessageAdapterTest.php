@@ -101,6 +101,19 @@ final class MessageAdapterTest extends TestCase {
 		$this->assertSame( 'a2-most-recent', OpenclaWP_Message_Adapter::last_assistant_text( $messages ) );
 	}
 
+	public function test_last_assistant_text_ignores_answers_before_from(): void {
+		$messages = array(
+			array( 'role' => 'user',      'content' => 'q1' ),
+			array( 'role' => 'assistant', 'content' => 'old answer' ),
+			array( 'role' => 'user',      'content' => 'q2' ),
+		);
+
+		$this->assertSame( '', OpenclaWP_Message_Adapter::last_assistant_text( $messages, 3 ) );
+
+		$messages[] = array( 'role' => 'assistant', 'content' => 'new answer' );
+		$this->assertSame( 'new answer', OpenclaWP_Message_Adapter::last_assistant_text( $messages, 3 ) );
+	}
+
 	public function test_last_assistant_text_is_empty_when_no_assistant_messages(): void {
 		$messages = array(
 			array( 'role' => 'user', 'content' => 'still waiting' ),

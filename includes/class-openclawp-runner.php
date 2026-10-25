@@ -219,6 +219,19 @@ final class OpenclaWP_Runner {
 			);
 		}
 
+		// Another turn of the same session is still running. Saving would
+		// overwrite its transcript, and the last assistant text is its
+		// previous answer, so report the clash instead.
+		if ( 'transcript_lock_contention' === ( $result['status'] ?? '' ) ) {
+			return array(
+				'session_id' => $session_id,
+				'reply'      => '',
+				'completed'  => false,
+				'messages'   => $session['messages'],
+				'error'      => 'Another turn of this session is still running.',
+			);
+		}
+
 		$final_messages = isset( $result['messages'] ) && is_array( $result['messages'] ) ? $result['messages'] : $messages;
 
 		// Slug already stored on the session at create-time (third arg to
@@ -229,7 +242,7 @@ final class OpenclaWP_Runner {
 
 		return array(
 			'session_id' => $session_id,
-			'reply'      => OpenclaWP_Message_Adapter::last_assistant_text( $final_messages ),
+			'reply'      => OpenclaWP_Message_Adapter::last_assistant_text( $final_messages, count( $messages ) ),
 			'completed'  => true,
 			'messages'   => $final_messages,
 		);

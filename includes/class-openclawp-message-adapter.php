@@ -170,11 +170,17 @@ final class OpenclaWP_Message_Adapter {
 	/**
 	 * Walk the transcript backwards and return the most recent assistant text.
 	 *
+	 * Pass `$from` to look only at messages from that index on. A turn passes
+	 * the length of the transcript it started with, so an older answer is
+	 * never returned as this turn's reply.
+	 *
 	 * @param array<int,array<string,mixed>> $messages Transcript messages.
+	 * @param int                            $from     First index to consider.
 	 * @return string Empty string when no assistant message is present.
 	 */
-	public static function last_assistant_text( array $messages ): string {
-		for ( $i = count( $messages ) - 1; $i >= 0; --$i ) {
+	public static function last_assistant_text( array $messages, int $from = 0 ): string {
+		$messages = array_values( $messages );
+		for ( $i = count( $messages ) - 1; $i >= max( 0, $from ); --$i ) {
 			$message = $messages[ $i ];
 			if ( 'assistant' !== ( $message['role'] ?? '' ) ) {
 				continue;
