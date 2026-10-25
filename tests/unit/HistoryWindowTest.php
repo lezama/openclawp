@@ -133,4 +133,12 @@ final class HistoryWindowTest extends TestCase {
 		$this->assertSame( 8, $settings['keep_turns'] );
 		$this->assertSame( 4, $settings['summarize_every'] );
 	}
+
+	public function test_summary_instruction_asks_for_dated_facts_without_status(): void {
+		$instruction = OpenclaWP_History_Window::summary_instruction( 1200 );
+
+		$this->assertStringContainsString( 'at most 1200 characters', $instruction );
+		$this->assertStringContainsString( 'dated record', $instruction );
+		$this->assertStringContainsString( 'Never say whether a request, task, purchase or payment is pending', $instruction );
+	}
 }

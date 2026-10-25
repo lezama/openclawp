@@ -209,6 +209,22 @@ final class OpenclaWP_History_Window {
 	}
 
 	/**
+	 * System instruction for the summarizer.
+	 *
+	 * The summary is a dated record of what was said, never a status board: a
+	 * request from June listed as "pending" reads as still open in October.
+	 */
+	public static function summary_instruction( int $max_chars ): string {
+		return sprintf(
+			'You keep the running memory of a long chat between a user and an assistant. Merge the previous summary with the new messages into one updated summary, at most %d characters, written in the language the user writes in. '
+			. 'Write it as a dated record of what was said: each item starts with the date it was said and who said it or asked for it, for example "On 9 June 2026, Ana asked for…". Use the dates that appear in the messages or tool results; if there is none, say the item is undated. '
+			. 'Never say whether a request, task, purchase or payment is pending, open, done or resolved, and never group items under headings such as "pending" or "to do": the assistant checks the current status with its tools. '
+			. 'Keep decisions, names, numbers and what the user asked the assistant to remember. Drop greetings, tool mechanics and anything the assistant can look up again. Reply with the summary only.',
+			$max_chars
+		);
+	}
+
+	/**
 	 * Fold `$messages` into `$previous` with one model call.
 	 *
 	 * Returns null when no model is available or the call fails, so the caller
@@ -221,10 +237,7 @@ final class OpenclaWP_History_Window {
 			return null;
 		}
 
-		$instruction = sprintf(
-			'You keep the running memory of a long chat between a user and an assistant. Merge the previous summary with the new messages into one updated summary, at most %d characters, written in the language the user writes in. Keep what the conversation needs later: decisions, commitments, open questions, names, numbers and dates the user gave, and what the user asked the assistant to remember. Drop greetings, tool mechanics and anything the assistant can look up again. Reply with the summary only.',
-			$settings['summary_chars']
-		);
+		$instruction = self::summary_instruction( $settings['summary_chars'] );
 		$prompt = "Previous summary:\n" . ( '' !== trim( $previous ) ? $previous : '(none)' )
 			. "\n\nNew messages:\n" . self::render_for_summary( $messages );
 
