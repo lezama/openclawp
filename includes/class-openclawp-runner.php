@@ -101,7 +101,7 @@ final class OpenclaWP_Runner {
 				? $preflight['messages']
 				: self::append_preflight_messages( $session['messages'], $message, $reply );
 
-			$store->update_session( $session_id, $final_messages );
+			$store->update_session( $session_id, $final_messages, $session['metadata'] ?? array() );
 
 			$result = array(
 				'session_id' => $session_id,
@@ -173,11 +173,16 @@ final class OpenclaWP_Runner {
 			: null;
 		$max_turns     = (int) ( ( $agent->get_default_config()['max_turns'] ?? 5 ) );
 
+		// Long-lived channel sessions: fold old turns into a running summary
+		// so the model sees a bounded window. The stored transcript stays whole.
+		$history = OpenclaWP_History_Window::prepare( $agent, $session_id, $messages, $session['metadata'] ?? array() );
+
 		$turn_runner = self::build_turn_runner(
 			$agent,
 			$session,
 			$session_id,
-			$tools['declarations_for_provider']
+			$tools['declarations_for_provider'],
+			$history
 		);
 
 		// Don't pass on_event — OpenclaWP_Event_Sink already subscribes to the canonical
@@ -207,7 +212,7 @@ final class OpenclaWP_Runner {
 		// `create_session`). No need to mirror it back into metadata —
 		// the metadata payload is for *additional* per-update annotations,
 		// not the durable agent identity.
-		$store->update_session( $session_id, $final_messages );
+		$store->update_session( $session_id, $final_messages, $history['metadata'] );
 
 		return array(
 			'session_id' => $session_id,
@@ -407,12 +412,13 @@ final class OpenclaWP_Runner {
 	 * @param WP_Agent $agent      Registered agent definition.
 	 * @param array    $session    Current session snapshot.
 	 * @param string   $session_id Session UUID for telemetry attribution.
+	 * @param array    $history    Summary state from OpenclaWP_History_Window::prepare().
 	 *
 	 * @return callable
 	 */
-	private static function build_turn_runner( WP_Agent $agent, array $session, string $session_id, array $function_declarations ): callable {
-		$default_factory = static function ( WP_Agent $agent_obj ) use ( $session_id, $function_declarations ): callable {
-			return static function ( array $messages, array $context ) use ( $agent_obj, $session_id, $function_declarations ): array {
+	private static function build_turn_runner( WP_Agent $agent, array $session, string $session_id, array $function_declarations, array $history = array() ): callable {
+		$default_factory = static function ( WP_Agent $agent_obj ) use ( $session_id, $function_declarations, $history ): callable {
+			return static function ( array $messages, array $context ) use ( $agent_obj, $session_id, $function_declarations, $history ): array {
 				$telemetry = array(
 					'agent_slug'  => $agent_obj->get_slug(),
 					'session_id'  => $session_id,
@@ -438,7 +444,13 @@ final class OpenclaWP_Runner {
 					);
 				}
 
-				$messages_for_model = self::messages_with_client_context( $messages, $context );
+				$windowed           = OpenclaWP_History_Window::for_model(
+					$messages,
+					(string) ( $history['summary'] ?? '' ),
+					(int) ( $history['upto'] ?? 0 ),
+					OpenclaWP_History_Window::settings( $agent_obj->get_slug() )
+				);
+				$messages_for_model = self::messages_with_client_context( $windowed, $context );
 				$ai_messages         = OpenclaWP_Message_Adapter::to_ai_client_messages( $messages_for_model );
 
 				$builder = wp_ai_client_prompt( $ai_messages );
