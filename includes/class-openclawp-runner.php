@@ -558,8 +558,9 @@ final class OpenclaWP_Runner {
 		 *
 		 * @param callable $default_factory Default factory (wraps wp_ai_client_prompt).
 		 * @param array    $session         Session snapshot.
+		 * @param array    $history         Summary state from OpenclaWP_History_Window::prepare().
 		 */
-		$factory = apply_filters( 'openclawp_turn_runner_factory', $default_factory, $session );
+		$factory = apply_filters( 'openclawp_turn_runner_factory', $default_factory, $session, $history );
 
 		return call_user_func( $factory, $agent );
 	}

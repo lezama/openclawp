@@ -54,6 +54,7 @@ final class OpenclaWP_Bootstrap {
 		OpenclaWP_Event_Sink::register();
 		OpenclaWP_Tracer::register();
 		OpenclaWP_Usage_Recorder::register();
+		OpenclaWP_Claude_Agent_Runner::register();
 		OpenclaWP_Budget_Guard::register();
 		// Adapter path (WP 7.0 official mcp-adapter) is always wired —
 		// it silently no-ops when the adapter isn't loaded so older sites

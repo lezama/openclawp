@@ -233,13 +233,16 @@ final class OpenclaWP_History_Window {
 	 * @param array<int,array<string,mixed>> $messages Messages leaving the window.
 	 */
 	public static function summarize( WP_Agent $agent, string $session_id, string $previous, array $messages, array $settings ): ?string {
-		if ( ! function_exists( 'wp_ai_client_prompt' ) ) {
-			return null;
-		}
-
 		$instruction = self::summary_instruction( $settings['summary_chars'] );
 		$prompt = "Previous summary:\n" . ( '' !== trim( $previous ) ? $previous : '(none)' )
 			. "\n\nNew messages:\n" . self::render_for_summary( $messages );
+
+		if ( OpenclaWP_Claude_Agent_Runner::applies( $agent ) ) {
+			return OpenclaWP_Claude_Agent_Runner::complete( $agent, $session_id, $instruction, $prompt );
+		}
+		if ( ! function_exists( 'wp_ai_client_prompt' ) ) {
+			return null;
+		}
 
 		$telemetry = array(
 			'agent_slug'  => $agent->get_slug(),

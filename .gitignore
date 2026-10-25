@@ -19,3 +19,6 @@
 
 # PHPStan cache.
 /.phpstan-cache/
+
+# Claude Agent bridge dependencies.
+/services/*/node_modules/

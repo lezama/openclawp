@@ -38,3 +38,6 @@ test-results
 README.md
 docs/release.md
 docs/scorecard.md
+
+# Sidecar services run outside WordPress.
+/services
