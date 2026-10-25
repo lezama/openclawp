@@ -50,6 +50,7 @@ class Run {
 		this.id = randomUUID();
 		this.pending = new Map(); // id → { name, parameters, resolve }
 		this.text = '';
+		this.failure = null;
 		this.waiter = null;
 		this.flushTimer = null;
 		this.done = null;
@@ -100,16 +101,27 @@ class Run {
 		try {
 			for await ( const msg of query( { prompt, options } ) ) {
 				if ( msg.type === 'assistant' ) {
+					// A plan usage limit, an expired login or an API failure arrives as
+					// an assistant message with `error` set and the reason as its text.
+					if ( msg.error ) {
+						this.failure = this.failure || msg.error;
+					}
 					for ( const block of msg.message?.content || [] ) {
 						if ( block.type === 'text' && block.text ) {
 							this.text += ( this.text ? '\n' : '' ) + block.text;
 						}
 					}
 				} else if ( msg.type === 'result' ) {
+					// The result can say `success` and still carry `is_error`: then
+					// its text is the error, never an answer to pass on.
+					const text = typeof msg.result === 'string' ? msg.result : this.text;
+					const failure = msg.subtype !== 'success'
+						? msg.subtype
+						: ( msg.is_error || this.failure ? `${ this.failure || 'error' }: ${ text.slice( 0, 200 ) }` : null );
 					this.done = {
-						status: msg.subtype === 'success' ? 'done' : 'error',
-						text: typeof msg.result === 'string' ? msg.result : this.text,
-						error: msg.subtype === 'success' ? null : msg.subtype,
+						status: failure ? 'error' : 'done',
+						text: failure ? '' : text,
+						error: failure,
 						usage: msg.usage || {},
 						model_usage: msg.modelUsage || {},
 						cost_usd_estimate: msg.total_cost_usd || 0,

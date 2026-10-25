@@ -206,6 +206,19 @@ final class OpenclaWP_Runner {
 
 		$result = WP_Agent_Conversation_Loop::run( $messages, $turn_runner, $loop_options );
 
+		// The provider failed (a turn runner threw). Report it as an error and
+		// keep the stored session as it was: the last assistant text in the
+		// transcript is an older answer, and a caller would send it again.
+		if ( 'failed' === ( $result['status'] ?? '' ) ) {
+			return array(
+				'session_id' => $session_id,
+				'reply'      => '',
+				'completed'  => false,
+				'messages'   => $session['messages'],
+				'error'      => (string) ( $result['failure']['message'] ?? 'The agent turn failed.' ),
+			);
+		}
+
 		$final_messages = isset( $result['messages'] ) && is_array( $result['messages'] ) ? $result['messages'] : $messages;
 
 		// Slug already stored on the session at create-time (third arg to
@@ -436,12 +449,7 @@ final class OpenclaWP_Runner {
 					$telemetry['error'] = 'wp_ai_client_prompt_unavailable';
 					self::emit_chat_telemetry( $telemetry );
 
-					return self::make_turn_result(
-						$messages,
-						'[wp_ai_client_prompt() unavailable. Configure a WP AI Client connector or override openclawp_turn_runner_factory.]',
-						array(),
-						$mediation_enabled
-					);
+					throw new RuntimeException( 'wp_ai_client_prompt() unavailable. Configure a WP AI Client connector or override openclawp_turn_runner_factory.' );
 				}
 
 				$windowed           = OpenclaWP_History_Window::for_model(
@@ -493,12 +501,9 @@ final class OpenclaWP_Runner {
 					$telemetry['error'] = (string) $generated->get_error_code();
 					self::emit_chat_telemetry( $telemetry );
 
-					return self::make_turn_result(
-						$messages,
-						'[provider error: ' . $generated->get_error_message() . ']',
-						array(),
-						$mediation_enabled
-					);
+					// Same as the claude-agent runner: a provider error is a failed
+					// turn, not a reply to send.
+					throw new RuntimeException( 'provider error: ' . $generated->get_error_message() );
 				}
 
 				$telemetry['success']     = true;

@@ -296,14 +296,17 @@ final class OpenclaWP_Claude_Agent_Runner {
 			return $out;
 		}
 
+		self::emit_telemetry( $agent, $session_id, $response, 'done' === $status, $start );
+
+		// A failed turn must not look like an answer: a caller that reads the
+		// reply would send the error text to a person, or take it as a run
+		// with nothing to do. Throwing makes the loop report the turn failed.
 		if ( 'done' !== $status ) {
 			$error = (string) ( $response['error'] ?? 'no response' );
 			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Matches openclaWP's telemetry channel.
 			error_log( sprintf( '[openclawp] claude_agent_error agent=%s session=%s error=%s', $agent->get_slug(), $session_id, $error ) );
-			$text = '[claude-agent error: ' . $error . ']';
+			throw new RuntimeException( 'claude-agent: ' . $error );
 		}
-
-		self::emit_telemetry( $agent, $session_id, $response, 'done' === $status, $start );
 
 		if ( $mediation ) {
 			return array(

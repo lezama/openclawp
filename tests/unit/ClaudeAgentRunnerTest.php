@@ -135,16 +135,20 @@ final class ClaudeAgentRunnerTest extends TestCase {
 		$this->assertTrue( $seen['success'] );
 	}
 
-	public function test_bridge_error_becomes_visible_text_and_failed_telemetry(): void {
+	public function test_bridge_error_throws_and_reports_failed_telemetry(): void {
 		$seen = null;
 		$GLOBALS['openclawp_test_actions']['openclawp_chat_turn_completed'] = static function ( array $t ) use ( &$seen ): void {
 			$seen = $t;
 		};
 
-		$out = OpenclaWP_Claude_Agent_Runner::to_turn_result( self::agent(), 's1', array(), array( 'status' => 'error', 'error' => 'bridge unreachable' ), true );
-
-		$this->assertSame( '[claude-agent error: bridge unreachable]', $out['content'] );
+		try {
+			OpenclaWP_Claude_Agent_Runner::to_turn_result( self::agent(), 's1', array(), array( 'status' => 'error', 'error' => 'bridge unreachable' ), true );
+			$this->fail( 'A bridge error must not come back as a reply.' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( 'claude-agent: bridge unreachable', $e->getMessage() );
+		}
 		$this->assertFalse( $seen['success'] );
+		$this->assertSame( 'bridge unreachable', $seen['error'] );
 	}
 
 	public function test_without_tools_returns_the_completed_legacy_shape(): void {
