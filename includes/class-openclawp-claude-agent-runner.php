@@ -114,15 +114,18 @@ final class OpenclaWP_Claude_Agent_Runner {
 					$settings
 				);
 				$windowed = OpenclaWP_Runner::messages_with_client_context( $windowed, $context );
-				$response = self::post(
-					array(
-						'system'    => $agent->get_description(),
-						'prompt'    => self::render_prompt( $windowed ),
-						'tools'     => $tools,
-						'model'     => self::model( $agent ),
-						'max_turns' => max( 1, (int) ( $agent->get_default_config()['max_turns'] ?? 25 ) ),
-					)
+				$body     = array(
+					'system'    => $agent->get_description(),
+					'prompt'    => self::render_prompt( $windowed ),
+					'tools'     => $tools,
+					'model'     => self::model( $agent ),
+					'max_turns' => max( 1, (int) ( $agent->get_default_config()['max_turns'] ?? 25 ) ),
 				);
+				$files = self::files_from_attachments( (array) ( $context['attachments'] ?? array() ) );
+				if ( $files ) {
+					$body['files'] = $files;
+				}
+				$response = self::post( $body );
 			}
 
 			return self::to_turn_result( $agent, $session_id, $messages, $response, ! empty( $tools ), $start );
@@ -131,19 +134,30 @@ final class OpenclaWP_Claude_Agent_Runner {
 
 	/**
 	 * One plain completion, no tools: for side calls such as the history
-	 * summary. Returns the text, or null on failure (logged).
+	 * summary or reading a photo. Returns the text, or null on failure (logged).
+	 *
+	 * @param array<int,array{path:string,mime:string}> $files Local images or PDFs the caller already trusts.
 	 */
-	public static function complete( WP_Agent $agent, string $session_id, string $system, string $prompt ): ?string {
-		$start    = microtime( true );
-		$response = self::post(
-			array(
-				'system'    => $system,
-				'prompt'    => $prompt,
-				'tools'     => array(),
-				'model'     => self::model( $agent ),
-				'max_turns' => 1,
-			)
+	public static function complete( WP_Agent $agent, string $session_id, string $system, string $prompt, array $files = array() ): ?string {
+		$start = microtime( true );
+		$body  = array(
+			'system'    => $system,
+			'prompt'    => $prompt,
+			'tools'     => array(),
+			'model'     => self::model( $agent ),
+			'max_turns' => 1,
 		);
+		$encoded = array();
+		foreach ( $files as $file ) {
+			$one = self::file_for_bridge( (string) ( $file['path'] ?? '' ), (string) ( $file['mime'] ?? '' ) );
+			if ( null !== $one ) {
+				$encoded[] = $one;
+			}
+		}
+		if ( $encoded ) {
+			$body['files'] = $encoded;
+		}
+		$response = self::post( $body );
 		$ok = 'done' === ( $response['status'] ?? '' );
 		self::emit_telemetry( $agent, $session_id, $response, $ok, $start );
 		if ( ! $ok ) {
@@ -153,6 +167,64 @@ final class OpenclaWP_Claude_Agent_Runner {
 		}
 		$text = trim( (string) ( $response['text'] ?? '' ) );
 		return '' !== $text ? $text : null;
+	}
+
+	/** Images the model reads, and PDFs. Anything else stays out. */
+	public const FILE_TYPES = array( 'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf' );
+
+	/**
+	 * Larger files are skipped. 5 MB is the model's limit for an image; a PDF
+	 * stops at 10 MB so its base64 fits the bridge's 20 MB request limit.
+	 */
+	public const MAX_IMAGE_BYTES = 5242880;
+	public const MAX_PDF_BYTES   = 10485760;
+
+	/**
+	 * The Media Library items of a turn's attachments, as bridge files. Only
+	 * items the current user uploaded or can edit; the rest are skipped.
+	 *
+	 * @param array<int,mixed> $attachments agents/chat attachments.
+	 * @return array<int,array{media_type:string,data:string}>
+	 */
+	public static function files_from_attachments( array $attachments ): array {
+		$out = array();
+		foreach ( array_slice( $attachments, 0, 12 ) as $attachment ) {
+			$id = is_array( $attachment ) ? (int) ( $attachment['media_id'] ?? 0 ) : 0;
+			if ( $id <= 0 || 'attachment' !== get_post_type( $id ) ) {
+				continue;
+			}
+			if ( (int) get_post_field( 'post_author', $id ) !== get_current_user_id() && ! current_user_can( 'edit_post', $id ) ) {
+				continue;
+			}
+			$file = self::file_for_bridge( (string) get_attached_file( $id ), (string) get_post_mime_type( $id ) );
+			if ( null !== $file ) {
+				$out[] = $file;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * One local file in the bridge's shape, or null if its type or size does
+	 * not fit.
+	 *
+	 * @return array{media_type:string,data:string}|null
+	 */
+	public static function file_for_bridge( string $path, string $mime ): ?array {
+		$mime = strtolower( $mime );
+		if ( ! in_array( $mime, self::FILE_TYPES, true ) || '' === $path || ! is_readable( $path ) ) {
+			return null;
+		}
+		$max  = 'application/pdf' === $mime ? self::MAX_PDF_BYTES : self::MAX_IMAGE_BYTES;
+		$size = (int) filesize( $path );
+		if ( $size <= 0 || $size > $max ) {
+			return null;
+		}
+		$bytes = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local upload, sent to the local bridge.
+		return false === $bytes ? null : array(
+			'media_type' => $mime,
+			'data'       => base64_encode( $bytes ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- The bridge takes files in base64.
+		);
 	}
 
 	/**

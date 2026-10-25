@@ -10,7 +10,9 @@
  * posts the result back. openclaWP's conversation loop stays the source of
  * truth for the transcript.
  *
- *   POST /v1/turn   start a run, or continue one with tool results
+ *   POST /v1/turn   start a run, or continue one with tool results. A start
+ *                   can carry `files` ({ media_type, data } in base64): images
+ *                   and PDFs go to the model with the prompt.
  *   GET  /health    liveness
  *
  * Auth: every request carries `Authorization: Bearer $OPENCLAWP_BRIDGE_TOKEN`.
@@ -26,6 +28,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { withFiles } from './files.mjs';
 
 const TOKEN = process.env.OPENCLAWP_BRIDGE_TOKEN || '';
 const PORT = Number( process.env.OPENCLAWP_BRIDGE_PORT || 8787 );
@@ -46,7 +49,7 @@ const runs = new Map();
  * request waiting on the run gets them as soon as the model stops to wait.
  */
 class Run {
-	constructor( { system, prompt, tools, model, maxTurns } ) {
+	constructor( { system, prompt, tools, model, maxTurns, files } ) {
 		this.id = randomUUID();
 		this.pending = new Map(); // id → { name, parameters, resolve }
 		this.text = '';
@@ -56,7 +59,8 @@ class Run {
 		this.done = null;
 		this.abort = new AbortController();
 		this.touch();
-		this.start( { system, prompt, tools, model, maxTurns } );
+		this.finished = new Promise( ( resolve ) => ( this.finish = resolve ) );
+		this.start( { system, prompt: withFiles( prompt, files, this.finished ), tools, model, maxTurns } );
 	}
 
 	touch() {
@@ -118,6 +122,7 @@ class Run {
 					const failure = msg.subtype !== 'success'
 						? msg.subtype
 						: ( msg.is_error || this.failure ? `${ this.failure || 'error' }: ${ text.slice( 0, 200 ) }` : null );
+					this.finish();
 					this.done = {
 						status: failure ? 'error' : 'done',
 						text: failure ? '' : text,
@@ -191,6 +196,7 @@ class Run {
 	close( reason ) {
 		clearTimeout( this.idleTimer );
 		clearTimeout( this.flushTimer );
+		this.finish();
 		if ( reason && ! this.done ) {
 			this.abort.abort();
 			if ( this.waiter ) {

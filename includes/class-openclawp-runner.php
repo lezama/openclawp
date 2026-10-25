@@ -265,6 +265,10 @@ final class OpenclaWP_Runner {
 		$context = array(
 			'client_context' => $client_context,
 		);
+		// Turn runners that can read files (claude-agent) take them from here.
+		if ( ! empty( $runtime_context['attachments'] ) && is_array( $runtime_context['attachments'] ) ) {
+			$context['attachments'] = $runtime_context['attachments'];
+		}
 		if ( '' !== $sender_id ) {
 			$context['user_phone']         = $sender_id;
 			$context['whatsapp_recipient'] = $sender_id;

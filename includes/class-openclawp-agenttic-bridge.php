@@ -206,6 +206,10 @@ final class OpenclaWP_Agenttic_Bridge {
 			'message'    => $text,
 			'session_id' => $session_id,
 		);
+		$attachments = self::attachments_from_message( $message );
+		if ( ! empty( $attachments ) ) {
+			$execute_args['attachments'] = $attachments;
+		}
 		if ( ! empty( $client_context ) ) {
 			$execute_args['client_context'] = $client_context;
 		}
@@ -384,6 +388,36 @@ final class OpenclaWP_Agenttic_Bridge {
 			}
 		}
 		return '';
+	}
+
+	/**
+	 * File parts of an A2A message that point at a Media Library item, as
+	 * agents/chat attachments: `{ type: 'file', file: { media_id, mimeType } }`.
+	 * Only the id travels; the runner loads the file and checks access.
+	 *
+	 * @param array<string,mixed> $message A2A message.
+	 * @return array<int,array{type:string,media_id:int,mime_type:string}>
+	 */
+	public static function attachments_from_message( array $message ): array {
+		$parts = isset( $message['parts'] ) && is_array( $message['parts'] ) ? $message['parts'] : array();
+		$out   = array();
+		foreach ( $parts as $part ) {
+			if ( ! is_array( $part ) || 'file' !== ( $part['type'] ?? $part['kind'] ?? '' ) ) {
+				continue;
+			}
+			$file = isset( $part['file'] ) && is_array( $part['file'] ) ? $part['file'] : array();
+			$id   = (int) ( $file['media_id'] ?? 0 );
+			$mime = strtolower( trim( (string) ( $file['mimeType'] ?? $file['mime_type'] ?? '' ) ) );
+			if ( $id <= 0 || '' === $mime ) {
+				continue;
+			}
+			$out[] = array(
+				'type'      => str_starts_with( $mime, 'image/' ) ? 'image' : 'file',
+				'media_id'  => $id,
+				'mime_type' => $mime,
+			);
+		}
+		return array_slice( $out, 0, 12 );
 	}
 
 	/**
