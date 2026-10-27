@@ -439,6 +439,15 @@ final class OpenclaWP_Claude_Agent_Runner {
 			);
 		}
 
+		// A turn can take longer than PHP's max_execution_time (30 s by
+		// default), and on macOS that limit counts wall time spent waiting on
+		// the bridge. PHP-FPM then kills the worker mid-request and the client
+		// gets a bare 502. Give each bridge call its own timeout plus room to
+		// save the session. CLI runs have no limit and keep none.
+		if ( (int) ini_get( 'max_execution_time' ) > 0 && function_exists( 'set_time_limit' ) ) {
+			set_time_limit( $settings['timeout'] + 30 );
+		}
+
 		$response = wp_remote_post(
 			$settings['url'] . '/v1/turn',
 			array(
